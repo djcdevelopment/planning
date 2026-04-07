@@ -1,3 +1,4 @@
+using Farmer.Core.Middleware;
 using Farmer.Core.Models;
 using Microsoft.Extensions.Logging;
 
@@ -6,11 +7,16 @@ namespace Farmer.Core.Workflow;
 public sealed class RunWorkflow
 {
     private readonly IReadOnlyList<IWorkflowStage> _stages;
+    private readonly IReadOnlyList<IWorkflowMiddleware> _middleware;
     private readonly ILogger<RunWorkflow> _logger;
 
-    public RunWorkflow(IEnumerable<IWorkflowStage> stages, ILogger<RunWorkflow> logger)
+    public RunWorkflow(
+        IEnumerable<IWorkflowStage> stages,
+        ILogger<RunWorkflow> logger,
+        IEnumerable<IWorkflowMiddleware>? middleware = null)
     {
         _stages = stages.ToList();
+        _middleware = middleware?.ToList() ?? [];
         _logger = logger;
     }
 
@@ -30,7 +36,7 @@ public sealed class RunWorkflow
             StageResult result;
             try
             {
-                result = await stage.ExecuteAsync(state, ct);
+                result = await ExecuteWithMiddlewareAsync(stage, state, ct);
             }
             catch (OperationCanceledException)
             {
@@ -68,5 +74,22 @@ public sealed class RunWorkflow
         state.AdvanceTo(RunPhase.Complete);
         _logger.LogInformation("Workflow completed for run {RunId}", state.RunId);
         return WorkflowResult.FromState(state, success: true);
+    }
+
+    private Task<StageResult> ExecuteWithMiddlewareAsync(
+        IWorkflowStage stage, RunFlowState state, CancellationToken ct)
+    {
+        // Build the middleware chain from inside out:
+        // innermost is the actual stage execution, then each middleware wraps it
+        Func<Task<StageResult>> next = () => stage.ExecuteAsync(state, ct);
+
+        for (var i = _middleware.Count - 1; i >= 0; i--)
+        {
+            var mw = _middleware[i];
+            var currentNext = next;
+            next = () => mw.InvokeAsync(stage, state, currentNext, ct);
+        }
+
+        return next();
     }
 }
