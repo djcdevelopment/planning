@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Farmer.Core.Models;
+using Xunit;
 
 namespace Farmer.Tests.Models;
 
