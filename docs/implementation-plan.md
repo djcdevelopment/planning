@@ -13,6 +13,15 @@ Build a .NET host control plane on Windows 10 that orchestrates Claude CLI worke
 - SSH.NET (`Renci.SshNet`) for all SSH/SCP operations
 - VM structure: `~/projects/` with `CLAUDE.md`, `.comms/progress.md`, `plans/`
 
+**Phase gate rule:** Nothing moves to Phase N+1 until `dotnet build && dotnet test` is green on Windows. No exceptions.
+
+**Lessons learned (Phase 1):**
+- Every `.cs` file needs correct `using` statements — `using Xunit;`, `using Microsoft.Extensions.*`, etc.
+- Classlib projects don't get `Microsoft.Extensions.*` for free — need explicit NuGet PackageReferences
+- Nullable types from external libraries (SSH.NET `int?`) need explicit handling
+- Text-based validation catches structure but not compilation — `dotnet build` is the only real gate
+- Fix-push-test loop is the workflow: I push, you build, paste errors, I fix
+
 **MS Agent Framework patterns used (all 3):**
 1. **Workflow Orchestration** — sequential pipeline with FlowState
 2. **Middleware** — logging, cost tracking, heartbeat as cross-cutting concerns
@@ -67,31 +76,38 @@ src/
 
 ## Phase 2: Workflow Pipeline + State Machine
 
-**Goal:** Core workflow as a sequential pipeline. Each stage is an interface so it can be stubbed.
+**Goal:** Core workflow as a sequential pipeline. Each stage is an interface so it can be stubbed. Must compile and pass all tests before moving on.
+
+**Lessons from Phase 1:**
+- Every `.cs` file MUST have correct `using` statements (missed `using Xunit;`, `using Microsoft.Extensions.*`)
+- Every project MUST have correct NuGet PackageReferences for all usings (missed Logging/Options in classlib)
+- Text-based validation is insufficient — `dotnet build && dotnet test` is the only real gate
+- Nullable types from external libraries need explicit handling (SSH.NET `int?`)
 
 **What gets built:**
-- `IWorkflowStage<TIn, TOut>` — generic stage interface with `ExecuteAsync`
-- `RunWorkflow` — orchestrator that runs stages in sequence, passing `RunFlowState`
-- 7 stages (all stubbed initially):
-  - `CreateRunStage` — generates run_id, writes RunRequest
-  - `LoadPromptsStage` — reads numbered prompt files from `data/sample-plans/`, builds TaskPacket
-  - `ReserveVmStage` — claims a VM from the pool
-  - `DeliverStage` — SCP uploads plan files + CLAUDE.md to VM's `~/projects/plans/`
-  - `DispatchStage` — SSH triggers `claude --dangerously-skip-permissions` on VM
-  - `CollectStage` — reads outputs from mapped drive, validates required files exist
-  - `ReviewStage` — placeholder for QA (auto-accepts for now)
-- `RunFlowState` — run_id, vm_id, attempt, status enum, timestamps, prompt list
+- `IWorkflowStage` — non-generic interface: `Task<StageResult> ExecuteAsync(RunFlowState state, CancellationToken ct)`
+- `StageResult` — Success/Failure/Skip with optional error message
+- `RunWorkflow` — orchestrator that runs stages in sequence, updating `RunFlowState` between stages
+- 7 stage implementations (all stubbed — just update state + return Success):
+  - `CreateRunStage` — generates run_id, writes RunRequest via `IRunStore`
+  - `LoadPromptsStage` — reads numbered prompt files, builds TaskPacket
+  - `ReserveVmStage` — claims a VM via `IVmManager`
+  - `DeliverStage` — SCP uploads via `ISshService` (stub: no-op)
+  - `DispatchStage` — SSH triggers worker (stub: no-op)
+  - `CollectStage` — reads outputs via `IMappedDriveReader` (stub: no-op)
+  - `ReviewStage` — placeholder (stub: auto-accept)
+- `RunFlowState` — references existing models: run_id, vm_id (from VmConfig.Name), attempt, RunPhase, timestamps, prompt list, WorkflowResult
 - `WorkflowResult` — success/failure/retry with collected artifacts
 
-**Key insight:** `Deliver` and `Dispatch` are separate stages because delivery is SCP (file copy) and dispatch is SSH (process start). The old plan combined them.
+**Key insight:** `Deliver` and `Dispatch` are separate stages because delivery is SCP (file copy) and dispatch is SSH (process start).
 
 **Key files:**
 ```
 Farmer.Core/
-├── Workflow/IWorkflowStage.cs
-├── Workflow/RunWorkflow.cs
-├── Workflow/RunFlowState.cs
-├── Workflow/WorkflowResult.cs
+├── Workflow/IWorkflowStage.cs        (interface + StageResult)
+├── Workflow/RunWorkflow.cs           (orchestrator)
+├── Workflow/RunFlowState.cs          (shared state)
+├── Workflow/WorkflowResult.cs        (final outcome)
 ├── Workflow/Stages/CreateRunStage.cs
 ├── Workflow/Stages/LoadPromptsStage.cs
 ├── Workflow/Stages/ReserveVmStage.cs
@@ -99,56 +115,109 @@ Farmer.Core/
 ├── Workflow/Stages/DispatchStage.cs
 ├── Workflow/Stages/CollectStage.cs
 └── Workflow/Stages/ReviewStage.cs
+
+Farmer.Tests/
+└── Workflow/
+    ├── RunWorkflowTests.cs           (orchestrator: stage ordering, state transitions)
+    ├── CreateRunStageTests.cs        (writes RunRequest, generates run_id)
+    └── LoadPromptsStageTests.cs      (reads prompt files, orders by prefix)
 ```
 
-**Smoke test:** Integration test with all stubs — verifies 7 stages execute in order, FlowState transitions are correct, and WorkflowResult is populated.
+**Dependencies on existing code:**
+- `RunFlowState` uses: `RunPhase` enum (from Models/RunStatus.cs), `VmConfig` (from Config/VmConfig.cs)
+- `CreateRunStage` calls: `IRunStore.SaveRunRequestAsync()`, `IRunStore.SaveRunStatusAsync()`
+- `LoadPromptsStage` reads files from `FarmerSettings.SamplePlansPath`
+- Stages reference `RunDirectoryLayout` for path resolution
+- No new NuGet packages needed — only Farmer.Core internal types
 
-**Resume point:** Workflow runs end-to-end with stubs. State transitions are validated.
+**Smoke test (MUST pass before Phase 3):**
+```
+dotnet build   — 0 errors, 0 warnings
+dotnet test    — all tests green including:
+  - RunWorkflowTests: 7 stages execute in order
+  - RunWorkflowTests: FlowState.Phase transitions correctly per stage
+  - RunWorkflowTests: stage failure stops pipeline, sets Failed state
+  - CreateRunStageTests: generates unique run_id, persists RunRequest
+  - LoadPromptsStageTests: reads sample-plans dir, orders by numeric prefix
+  - LoadPromptsStageTests: fails gracefully on missing/empty directory
+```
+
+**Resume point:** Workflow runs end-to-end with stubs. State transitions are validated. All tests green.
 
 ---
 
-## Phase 3: SSH + SCP Real Implementation + Shakedown
+## Phase 3: VmManager + Wire Real Stages + Shakedown
 
-**Goal:** Replace SSH/SCP stubs with real implementations. Build the shakedown test to validate infrastructure.
+**Goal:** SshService and MappedDriveReader already exist from Phase 1. This phase adds VmManager, wires real stage implementations (replacing stubs), and validates with a shakedown script.
+
+**Architectural issue to resolve first:**
+- `RunDirectoryLayout` is in `Farmer.Tools` (static class) but stages are in `Farmer.Core`
+- Stages need path resolution to know where to SCP files, what to read from mapped drive
+- **Solution:** Move `RunDirectoryLayout` to `Farmer.Core` (it's pure path logic with no external deps)
+- This avoids circular dependency (Core → Tools → Core)
 
 **What gets built:**
-- `SshService` real implementation:
-  - `Execute(vmName, command)` — opens SSH connection, runs command, returns stdout/stderr
-  - `ScpUpload(vmName, localPath, remotePath)` — uploads file via ScpClient
-  - Connection pooling / reuse per VM
-  - Timeout handling (configurable, default 30s for commands, 5min for dispatch)
-- `MappedDriveReader` real implementation:
-  - Reads from configured drive letter path
-  - 500ms retry with backoff for SSHFS cache lag
-  - File existence polling with timeout
-- `VmManager` — pool of VMs with state tracking:
+- Move `RunDirectoryLayout` from `Farmer.Tools` → `Farmer.Core` (namespace: `Farmer.Core.Layout`)
+- `VmManager` — implements `IVmManager`, pool of VMs with state tracking:
   - States: Available, Reserved, Busy, Draining, Error
   - `ReserveAsync()` — returns first available VM
   - `ReleaseAsync(vmId)` — returns VM to pool
   - Thread-safe (ConcurrentDictionary or lock)
+- Wire real implementations into workflow stages (inject interfaces via constructor):
+  - `DeliverStage` — inject `ISshService`, `IRunStore`:
+    - Ensures `.comms/` and `plans/` dirs exist on VM (SSH mkdir -p)
+    - SCPs each prompt .md file to VM's `~/projects/plans/`
+    - SCPs task-packet.json to VM
+    - SCPs CLAUDE.md to VM
+  - `DispatchStage` — inject `ISshService`, `FarmerSettings`:
+    - SSH: `cd ~/projects && claude --dangerously-skip-permissions -p "$(cat plans/task-packet.json)"`
+    - Uses dispatch timeout (default 30min from FarmerSettings)
+    - Checks SshResult.Success, returns Failure with stderr on error
+  - `CollectStage` — inject `IMappedDriveReader`, `IRunStore`:
+    - Waits for `output/manifest.json` on mapped drive (with timeout)
+    - Reads + deserializes `Manifest` and `Summary` JSON
+    - Validates required fields (FilesChanged not empty, Description not empty)
+    - Persists collected artifacts to RunStore
+  - `ReserveVmStage` — already wired (calls `IVmManager.ReserveAsync()`)
 - PowerShell shakedown script: `scripts/shakedown.ps1`
   - Tests all 7 categories x configured VMs
   - SSH connectivity, file write/read/delete, .comms round-trip, git status, mapped drive readable
+- Unit tests for VmManager + real stage logic (using test doubles for ISshService/IMappedDriveReader)
 
 **Key files:**
 ```
+Farmer.Core/
+├── Layout/RunDirectoryLayout.cs  (moved from Farmer.Tools)
+└── Workflow/Stages/
+    ├── DeliverStage.cs    (real: calls ISshService)
+    ├── DispatchStage.cs   (real: calls ISshService)
+    └── CollectStage.cs    (real: calls IMappedDriveReader + deserializes JSON)
+
 Farmer.Tools/
-├── SshService.cs          (real Renci.SshNet implementation)
-├── MappedDriveReader.cs   (real mapped drive reader with retry)
-└── VmManager.cs
+├── VmManager.cs
+└── RunDirectoryLayout.cs  (deleted — moved to Core)
 
 scripts/
 └── shakedown.ps1
 
 Farmer.Tests/
-└── Integration/SshServiceTests.cs (requires VM connectivity)
+├── Tools/VmManagerTests.cs         (state machine: reserve, release, concurrent, error)
+├── Workflow/DeliverStageTests.cs   (mock ISshService, verify SCP calls)
+├── Workflow/DispatchStageTests.cs  (mock ISshService, verify SSH command)
+├── Workflow/CollectStageTests.cs   (mock IMappedDriveReader, verify file reads + parsing)
+└── Integration/SshServiceTests.cs  (requires VM connectivity — skipped in CI)
 ```
 
 **Smoke test:**
-- `.\scripts\shakedown.ps1` — all 21 tests pass (7 categories x 3 VMs, or 7 x 1 for single-VM start)
-- Integration test: SCP a test file to VM, wait 500ms, read it back via mapped drive, delete via SSH
+- `dotnet build && dotnet test` — all green including:
+  - VmManager: reserve/release cycle, no-VMs-available, thread safety, error recovery
+  - DeliverStage: verifies correct SCP calls made with right paths
+  - DispatchStage: verifies SSH command format, timeout handling, failure propagation
+  - CollectStage: verifies file wait, JSON deserialization, validation of required fields
+  - All existing 38 tests still pass (no regressions)
+- `.\scripts\shakedown.ps1` (on Windows with VMs) — 7 categories x N VMs all pass
 
-**Resume point:** Can reliably write to VMs and read back. Infrastructure is validated.
+**Resume point:** VmManager works, all stages have real implementations with tested logic. Shakedown validates infra.
 
 ---
 
@@ -156,124 +225,157 @@ Farmer.Tests/
 
 **Goal:** Cross-cutting concerns via middleware pattern wrapping each workflow stage.
 
+**Lessons applied:**
+- No new NuGet packages needed — use `Microsoft.Extensions.Logging` (not Serilog)
+- Middleware parameter must be optional in `RunWorkflow` constructor to avoid breaking existing 10 tests
+- HeartbeatMiddleware must skip when `state.Vm` is null (before ReserveVmStage)
+- CostTrackingMiddleware accumulates during run, needs explicit flush at workflow end
+
 **What gets built:**
-- `IWorkflowMiddleware` — wraps stage execution with before/after hooks
-- `LoggingMiddleware` — structured logging (Serilog) of stage entry/exit/duration/errors
-- `CostTrackingMiddleware` — accumulates wall-clock time per stage, writes `cost-report.json` at end
-- `HeartbeatMiddleware` — after each stage transition, writes `progress.md` to VM's `.comms/` via SSH
-  - **Critical:** Must write via SSH, NOT via mapped drive (read-only!)
-  - Format: machine-readable YAML front matter + human-readable markdown body
-  - Contains: current_phase, progress_pct, started_at, updated_at, stages_completed[]
-- Middleware pipeline builder: `workflow.Use<LoggingMiddleware>().Use<HeartbeatMiddleware>().Use<CostTrackingMiddleware>()`
+- `IWorkflowMiddleware` — wraps stage execution:
+  ```csharp
+  Task<StageResult> InvokeAsync(IWorkflowStage stage, RunFlowState state,
+      Func<Task<StageResult>> next, CancellationToken ct);
+  ```
+- Modify `RunWorkflow` constructor to accept optional `IEnumerable<IWorkflowMiddleware>`:
+  - Default to empty list (no middleware) — preserves existing test compatibility
+  - Each middleware wraps `stage.ExecuteAsync` via the `next` delegate pattern
+- `LoggingMiddleware` — uses `ILogger`, logs stage name + duration + outcome per stage
+- `CostTrackingMiddleware`:
+  - Tracks `Stopwatch` per stage, accumulates `List<StageCost>`
+  - Exposes `GetReport(runId)` method that returns `CostReport`
+  - `RunWorkflow` calls this after pipeline completes to persist via `IRunStore`
+- `HeartbeatMiddleware`:
+  - After each stage completes, writes `progress.md` to VM via `ISshService.ScpUploadContentAsync()`
+  - **Skips** when `state.Vm` is null (early stages before VM reservation)
+  - Format: YAML front matter + markdown body
+  - Uses `RunDirectoryLayout.VmProgressFile()` for path
 
 **Key files:**
 ```
 Farmer.Core/
 ├── Middleware/IWorkflowMiddleware.cs
-├── Middleware/MiddlewarePipeline.cs
 ├── Middleware/LoggingMiddleware.cs
 ├── Middleware/CostTrackingMiddleware.cs
 └── Middleware/HeartbeatMiddleware.cs
+
+Farmer.Core/Workflow/
+└── RunWorkflow.cs  (modified: accept optional middleware list, wrap stage calls)
+
+Farmer.Tests/
+├── Middleware/LoggingMiddlewareTests.cs
+├── Middleware/CostTrackingMiddlewareTests.cs
+└── Middleware/HeartbeatMiddlewareTests.cs
 ```
 
-**Smoke test:** Run workflow with middleware, verify:
-1. Console logs show structured stage timing
-2. `.comms/progress.md` on VM (read via mapped drive) shows stage progression
-3. Cost report JSON has timing entries for each stage
+**Smoke test (MUST pass before Phase 5):**
+```
+dotnet build && dotnet test — all green including:
+  - All existing 66 tests pass (no constructor breakage)
+  - LoggingMiddleware: logs stage name and duration
+  - CostTrackingMiddleware: accumulates timing per stage, GetReport returns valid CostReport
+  - CostTrackingMiddleware: duration > 0 for stages that take time
+  - HeartbeatMiddleware: calls ISshService with correct progress.md path and content
+  - HeartbeatMiddleware: skips when state.Vm is null
+  - RunWorkflow with middleware: middleware wraps in correct order
+```
 
-**Resume point:** Every workflow run produces structured logs, cost data, and remote progress updates.
+**Resume point:** Every workflow run can produce structured logs, cost data, and remote progress updates. All middleware is testable in isolation.
 
 ---
 
-## Phase 5: OpenTelemetry Instrumentation
+## Phase 5: OpenTelemetry + OpenAI-Compatible API (Combined)
 
-**Goal:** Distributed tracing with per-stage spans, exportable to Aspire Dashboard or any OTLP collector.
+**Goal:** Wire up the full entry point so you can submit a work request via HTTP, watch it execute through the workflow with all middleware, and see OTel traces + logs + cost reports. Combines old Phases 5+6 because OTel instrumentation isn't visible without a running host.
+
+**Lessons applied:**
+- OTel plumbing alone produces nothing visible — need a running host + API to exercise it
+- DI wiring is where missing packages and constructor mismatches surface — test early
+- WorkRequestLoader duplicates LoadPromptsStage logic — reuse or share
+- Sample plans already exist in `data/sample-plans/` from Phase 1
 
 **What gets built:**
+
+### OTel instrumentation:
+- `TelemetryMiddleware` — implements `IWorkflowMiddleware`, wraps each stage in an `Activity` span
+  - Tags: stage_name, run_id, outcome, duration
+  - Child of root `workflow/{run_id}` span
 - `FarmerActivitySource` — `ActivitySource("Farmer.Workflow")` singleton
-- Root span: `workflow/{run_id}` with tags: run_id, vm_id, work_request_name
-- Child spans per stage: `stage/{stage_name}` with duration + status
-- Dispatch span specifically captures SSH round-trip time
-- Custom metrics via `System.Diagnostics.Metrics`:
-  - `farmer.runs.total` (counter)
-  - `farmer.run.duration_seconds` (histogram)
-  - `farmer.stage.duration_seconds` (histogram, tagged by stage name)
-- `TelemetrySetup` — DI registration, OTLP exporter config, console exporter for dev
-- Resource tags: service.name=Farmer, service.version, host.name
+- `FarmerMetrics` — custom metrics: `farmer.runs.total` (counter), `farmer.stage.duration_seconds` (histogram)
+- `TelemetrySetup` — DI registration in `Program.cs`:
+  - OpenTelemetry SDK with OTLP exporter (for Aspire Dashboard)
+  - Console exporter (for immediate terminal visibility)
+  - Resource: service.name=Farmer, service.version=0.1.0
+
+### OpenAI-compatible API:
+- `POST /v1/chat/completions` — accepts OpenAI ChatCompletion format:
+  - Extracts work request name from message content (e.g., `"load:react-grid-component"`)
+  - Constructs full stage pipeline with DI
+  - Runs workflow async, returns run_id immediately
+- `GET /v1/runs/{runId}/status` — returns current RunStatus from RunStore
+- `GET /v1/runs/{runId}/result` — returns WorkflowResult + CostReport
+- Full DI wiring in `Program.cs`:
+  - Register all services: ISshService, IMappedDriveReader, IVmManager, IRunStore
+  - Register all stages in pipeline order
+  - Register all middleware: Logging, CostTracking, Heartbeat, Telemetry
+  - Configure FarmerSettings from appsettings.json
+
+### NuGet packages needed (Farmer.Host):
+- `OpenTelemetry.Extensions.Hosting`
+- `OpenTelemetry.Exporter.Console`
+- `OpenTelemetry.Exporter.OpenTelemetryProtocol`
 
 **Key files:**
 ```
+Farmer.Core/
+└── Middleware/TelemetryMiddleware.cs
+
 Farmer.Host/
+├── Program.cs                          (full DI wiring + OTel setup)
 ├── Telemetry/FarmerActivitySource.cs
 ├── Telemetry/FarmerMetrics.cs
-└── Telemetry/TelemetrySetup.cs
-
-Farmer.Core/
-└── Middleware/TelemetryMiddleware.cs  (wraps stages in Activity spans)
-```
-
-**Smoke test:**
-- Run workflow with console exporter — verify spans appear in stdout
-- Optional: `docker run --rm -p 18888:18888 -p 4317:4317 mcr.microsoft.com/dotnet/aspire-dashboard` and verify trace waterfall in browser
-
-**Resume point:** Full observability. Every run produces a trace waterfall.
-
----
-
-## Phase 6: OpenAI-Compatible API + Prompt Loader
-
-**Goal:** HTTP entry point that external tools can call to submit work requests.
-
-**What gets built:**
-- `POST /v1/chat/completions` — OpenAI-compatible endpoint:
-  - Accepts standard ChatCompletion request format
-  - Extracts work request name from message content (e.g., `"load:react-grid-component"`)
-  - Triggers async workflow run, returns run_id in response
-  - Streams progress updates via SSE if `stream: true` (stretch goal)
-- `GET /v1/runs/{runId}/status` — polling endpoint for run status
-- `GET /v1/runs/{runId}/result` — final result with artifacts
-- `WorkRequestLoader`:
-  - Reads from `data/sample-plans/{work-request-name}/`
-  - Glob for `*.md` files, sort by numeric prefix (`1-`, `2-`, etc.)
-  - Builds ordered `TaskPacket` with prompt content
-  - Validates: at least 1 prompt, all files readable, no bracket naming
-- Sample work requests (2-3 directories with example prompts)
-
-**Key files:**
-```
-Farmer.Host/
+├── Telemetry/TelemetrySetup.cs
 ├── Controllers/CompletionsController.cs
 ├── Controllers/RunsController.cs
-├── Services/WorkRequestLoader.cs
 ├── OpenAI/ChatCompletionRequest.cs
 ├── OpenAI/ChatCompletionResponse.cs
-└── OpenAI/RunStatusResponse.cs
+└── appsettings.json                    (updated with OTel config)
 
-data/
-└── sample-plans/
-    ├── react-grid-component/
-    │   ├── 1-SetupProject.md
-    │   ├── 2-BuildGridComponent.md
-    │   └── 3-AddTests.md
-    └── api-endpoint/
-        ├── 1-DefineSchema.md
-        └── 2-ImplementEndpoint.md
+Farmer.Tests/
+├── Middleware/TelemetryMiddlewareTests.cs
+└── Controllers/CompletionsControllerTests.cs (optional — integration)
 ```
 
-**Smoke test:**
+**Smoke test — the "see everything light up" moment:**
 ```powershell
-# Submit work request
-$response = Invoke-RestMethod -Uri http://localhost:5000/v1/chat/completions -Method Post -Body '{"model":"claude-worker","messages":[{"role":"user","content":"load:react-grid-component"}]}' -ContentType "application/json"
+# 1. Optional: start Aspire Dashboard for trace UI
+docker run --rm -p 18888:18888 -p 4317:4317 mcr.microsoft.com/dotnet/aspire-dashboard
 
-# Poll for status
-Invoke-RestMethod -Uri "http://localhost:5000/v1/runs/$($response.run_id)/status"
+# 2. Start host
+cd src/Farmer.Host
+dotnet run
+
+# 3. Submit work request (stubs will execute instantly)
+$r = Invoke-RestMethod -Uri http://localhost:5000/v1/chat/completions -Method Post `
+  -Body '{"model":"claude-worker","messages":[{"role":"user","content":"load:react-grid-component"}]}' `
+  -ContentType "application/json"
+
+# 4. Poll status
+Invoke-RestMethod -Uri "http://localhost:5000/v1/runs/$($r.run_id)/status"
+
+# 5. Check console output — should show:
+#    - Structured log lines per stage (LoggingMiddleware)
+#    - OTel span output (ConsoleExporter)
+#    - Cost report written
+
+# 6. Check Aspire Dashboard at http://localhost:18888 — trace waterfall
 ```
 
-**Resume point:** External tools can submit work and poll status via standard HTTP.
+**Resume point:** Full observability pipeline working. Submit via HTTP, see traces, logs, and cost data.
 
 ---
 
-## Phase 7: Worker Script + CLAUDE.md + End-to-End
+## Phase 6: Worker Script + CLAUDE.md + End-to-End
 
 **Goal:** The VM-side worker script and CLAUDE.md that make Claude CLI actually do the work. Wire everything together for the first real end-to-end run.
 
@@ -335,7 +437,7 @@ Farmer.Core/Workflow/Stages/
 
 ---
 
-## Phase 8: QA Inspection Agent + Retry Loop
+## Phase 7: QA Inspection Agent + Retry Loop
 
 **Goal:** Host-side QA scoring using OpenAI API, with retry capability.
 
@@ -416,11 +518,10 @@ Host reads from VM: Mapped drive (N:) ──────────────
 
 ## Verification Checklist (per phase)
 
-- [ ] Phase 1: `dotnet build` succeeds, contract serialization tests pass
-- [ ] Phase 2: Workflow integration test passes with stubs
-- [ ] Phase 3: `shakedown.ps1` passes all tests, SCP round-trip works
-- [ ] Phase 4: Structured logs appear, `.comms/progress.md` updated via SSH
-- [ ] Phase 5: OTel spans visible in console exporter or Aspire Dashboard
-- [ ] Phase 6: HTTP endpoint accepts request, returns run_id, status polling works
-- [ ] Phase 7: Full end-to-end run with real Claude CLI on VM
-- [ ] Phase 8: QA verdict written, retry loop works when triggered
+- [x] Phase 1: `dotnet build` succeeds, contract serialization tests pass (19 tests)
+- [x] Phase 2: Workflow integration test passes with stubs (38 tests)
+- [x] Phase 3: VmManager + real stages + shakedown script (66 tests)
+- [x] Phase 4: Middleware layer — logging, cost tracking, heartbeat (79 tests)
+- [ ] Phase 5: OTel + API — submit via HTTP, see traces in Aspire Dashboard
+- [ ] Phase 6: Worker script + CLAUDE.md — full end-to-end with real Claude CLI on VM
+- [ ] Phase 7: QA inspection agent — verdict scoring + retry loop
