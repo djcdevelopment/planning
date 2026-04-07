@@ -40,7 +40,7 @@ public sealed class SshService : ISshService, IDisposable
             {
                 result.StdOut = cmd.Execute();
                 result.StdErr = cmd.Error;
-                result.ExitCode = cmd.ExitStatus;
+                result.ExitCode = cmd.ExitStatus ?? -1;
             }
             catch (Exception ex)
             {
