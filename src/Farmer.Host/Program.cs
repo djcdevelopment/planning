@@ -54,8 +54,23 @@ app.MapGet("/", () => Results.Ok(new
 }));
 
 // OpenAI-compatible completions endpoint
-app.MapPost("/v1/chat/completions", (ChatCompletionRequest request, BackgroundWorkflowRunner runner) =>
+app.MapPost("/v1/chat/completions", async (HttpContext ctx, BackgroundWorkflowRunner runner) =>
 {
+    ChatCompletionRequest? request;
+    try
+    {
+        request = await ctx.Request.ReadFromJsonAsync<ChatCompletionRequest>();
+    }
+    catch
+    {
+        return Results.BadRequest(new { error = "Invalid JSON body" });
+    }
+
+    if (request is null)
+    {
+        return Results.BadRequest(new { error = "Empty request body" });
+    }
+
     var lastMessage = request.Messages.LastOrDefault();
     if (lastMessage is null || string.IsNullOrWhiteSpace(lastMessage.Content))
     {
