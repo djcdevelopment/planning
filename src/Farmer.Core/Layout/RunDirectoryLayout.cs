@@ -1,6 +1,6 @@
 using Farmer.Core.Config;
 
-namespace Farmer.Tools;
+namespace Farmer.Core.Layout;
 
 /// <summary>
 /// Knows the canonical paths for all run-related files on both
