@@ -1,5 +1,6 @@
 using Farmer.Core.Config;
 using Farmer.Tools;
+using Xunit;
 
 namespace Farmer.Tests.Tools;
 
