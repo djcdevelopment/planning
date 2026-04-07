@@ -8,7 +8,8 @@ namespace Farmer.Tools;
 
 public sealed class VmManager : IVmManager
 {
-    private readonly ConcurrentDictionary<string, VmState> _states = new();
+    private readonly Dictionary<string, VmState> _states = new();
+    private readonly List<VmConfig> _vmOrder = [];
     private readonly Dictionary<string, VmConfig> _vms = new();
     private readonly ILogger<VmManager> _logger;
     private readonly object _reserveLock = new();
@@ -19,6 +20,7 @@ public sealed class VmManager : IVmManager
         foreach (var vm in settings.Value.Vms)
         {
             _vms[vm.Name] = vm;
+            _vmOrder.Add(vm);
             _states[vm.Name] = VmState.Available;
         }
     }
@@ -27,13 +29,13 @@ public sealed class VmManager : IVmManager
     {
         lock (_reserveLock)
         {
-            foreach (var (name, state) in _states)
+            foreach (var vm in _vmOrder)
             {
-                if (state == VmState.Available)
+                if (_states[vm.Name] == VmState.Available)
                 {
-                    _states[name] = VmState.Reserved;
-                    _logger.LogInformation("VM [{Vm}] reserved", name);
-                    return Task.FromResult<VmConfig?>(_vms[name]);
+                    _states[vm.Name] = VmState.Reserved;
+                    _logger.LogInformation("VM [{Vm}] reserved", vm.Name);
+                    return Task.FromResult<VmConfig?>(vm);
                 }
             }
         }
