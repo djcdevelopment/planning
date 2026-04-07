@@ -85,7 +85,7 @@ const requiredFiles = [
   // Tools
   'src/Farmer.Tools/SshService.cs',
   'src/Farmer.Tools/MappedDriveReader.cs',
-  'src/Farmer.Tools/RunDirectoryLayout.cs',
+  'src/Farmer.Core/Layout/RunDirectoryLayout.cs',
   'src/Farmer.Tools/FileRunStore.cs',
   // Host
   'src/Farmer.Host/Program.cs',
@@ -146,7 +146,7 @@ const nsChecks = [
   ['src/Farmer.Core/Config/VmConfig.cs', 'namespace Farmer.Core.Config'],
   ['src/Farmer.Tools/SshService.cs', 'namespace Farmer.Tools'],
   ['src/Farmer.Tools/MappedDriveReader.cs', 'namespace Farmer.Tools'],
-  ['src/Farmer.Tools/RunDirectoryLayout.cs', 'namespace Farmer.Tools'],
+  ['src/Farmer.Core/Layout/RunDirectoryLayout.cs', 'namespace Farmer.Core.Layout'],
   ['src/Farmer.Tests/Models/ContractSerializationTests.cs', 'namespace Farmer.Tests.Models'],
   ['src/Farmer.Tests/Tools/RunDirectoryLayoutTests.cs', 'namespace Farmer.Tests.Tools'],
 ];
@@ -236,7 +236,7 @@ const csFiles = [
   'src/Farmer.Tools/SshService.cs',
   'src/Farmer.Tools/MappedDriveReader.cs',
   'src/Farmer.Tools/FileRunStore.cs',
-  'src/Farmer.Tools/RunDirectoryLayout.cs',
+  'src/Farmer.Core/Layout/RunDirectoryLayout.cs',
   'src/Farmer.Core/Models/RunRequest.cs',
   'src/Farmer.Core/Models/TaskPacket.cs',
   'src/Farmer.Core/Models/RunStatus.cs',
@@ -284,10 +284,10 @@ check('MappedDriveReader is READ-ONLY (no File.Write)', () => {
 });
 
 check('RunDirectoryLayout has separate VM vs Host paths', () =>
-  fileContains('src/Farmer.Tools/RunDirectoryLayout.cs', 'VmPlansDir', 'HostProgressFile'));
+  fileContains('src/Farmer.Core/Layout/RunDirectoryLayout.cs', 'VmPlansDir', 'HostProgressFile'));
 
 check('VM paths use forward slashes', () => {
-  const content = readFile('src/Farmer.Tools/RunDirectoryLayout.cs');
+  const content = readFile('src/Farmer.Core/Layout/RunDirectoryLayout.cs');
   // VM paths should use forward slashes in string interpolation
   const vmMethods = content.match(/public static string Vm\w+.*=>/g) || [];
   if (vmMethods.length === 0) return 'no VmXxx methods found';
@@ -295,7 +295,7 @@ check('VM paths use forward slashes', () => {
 });
 
 check('Host paths use Path.Combine (Windows-safe)', () =>
-  fileContains('src/Farmer.Tools/RunDirectoryLayout.cs', 'Path.Combine'));
+  fileContains('src/Farmer.Core/Layout/RunDirectoryLayout.cs', 'Path.Combine'));
 
 check('FileRunStore uses atomic writes (tmp + rename)', () =>
   fileContains('src/Farmer.Tools/FileRunStore.cs', '.tmp', 'File.Move'));
