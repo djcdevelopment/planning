@@ -203,6 +203,70 @@ check('IVmManager has ReserveAsync + ReleaseAsync', () =>
 check('IVmManager has VmState enum', () =>
   fileContains('src/Farmer.Core/Contracts/IVmManager.cs', 'enum VmState', 'Available', 'Reserved', 'Busy'));
 
+// ---- Section 5b: NuGet / Using Resolution ----
+console.log('\n📦 NuGet Dependency Resolution');
+
+// Map of using prefixes to required NuGet packages or project references
+const usingToPackage = {
+  'Microsoft.Extensions.Logging': { pkg: 'Microsoft.Extensions.Logging.Abstractions', or: 'Microsoft.NET.Sdk.Web' },
+  'Microsoft.Extensions.Options': { pkg: 'Microsoft.Extensions.Options', or: 'Microsoft.NET.Sdk.Web' },
+  'Renci.SshNet': { pkg: 'SSH.NET' },
+  'Microsoft.AspNetCore': { sdk: 'Microsoft.NET.Sdk.Web' },
+};
+
+function getCsprojForSource(csFile) {
+  // Walk up from the .cs file to find the .csproj
+  const dir = path.dirname(path.join(ROOT, csFile));
+  const csprojFiles = fs.readdirSync(dir).filter(f => f.endsWith('.csproj'));
+  if (csprojFiles.length > 0) return path.join(dir, csprojFiles[0]);
+  // Try parent
+  const parent = path.dirname(dir);
+  const parentCsproj = fs.readdirSync(parent).filter(f => f.endsWith('.csproj'));
+  if (parentCsproj.length > 0) return path.join(parent, parentCsproj[0]);
+  return null;
+}
+
+function getUsings(csFile) {
+  const content = readFile(csFile);
+  const matches = content.match(/^using\s+([\w.]+);/gm) || [];
+  return matches.map(m => m.replace(/^using\s+/, '').replace(';', ''));
+}
+
+const csFiles = [
+  'src/Farmer.Tools/SshService.cs',
+  'src/Farmer.Tools/MappedDriveReader.cs',
+  'src/Farmer.Tools/FileRunStore.cs',
+  'src/Farmer.Tools/RunDirectoryLayout.cs',
+  'src/Farmer.Core/Models/RunRequest.cs',
+  'src/Farmer.Core/Models/TaskPacket.cs',
+  'src/Farmer.Core/Models/RunStatus.cs',
+];
+
+for (const csFile of csFiles) {
+  if (!fileExists(csFile)) continue;
+  const usings = getUsings(csFile);
+  const csprojPath = getCsprojForSource(csFile);
+  if (!csprojPath) continue;
+  const csproj = fs.readFileSync(csprojPath, 'utf8');
+  const isWebSdk = csproj.includes('Microsoft.NET.Sdk.Web');
+
+  for (const u of usings) {
+    for (const [prefix, req] of Object.entries(usingToPackage)) {
+      if (!u.startsWith(prefix)) continue;
+      // Web SDK projects get Microsoft.Extensions.* for free
+      if (isWebSdk && req.or === 'Microsoft.NET.Sdk.Web') continue;
+      if (req.sdk && isWebSdk) continue;
+      // Check if the required package is in csproj
+      if (req.pkg && !csproj.includes(req.pkg)) {
+        check(`${path.basename(csFile)}: using ${u} → needs ${req.pkg} in .csproj`, () =>
+          `missing PackageReference "${req.pkg}" in ${path.basename(csprojPath)}`);
+      } else {
+        check(`${path.basename(csFile)}: using ${u} → resolved`, () => true);
+      }
+    }
+  }
+}
+
 // ---- Section 6: Infrastructure Rules ----
 console.log('\n🏗️  Infrastructure Rules (hard-won lessons)');
 
