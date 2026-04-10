@@ -35,18 +35,24 @@ public static class RunDirectoryLayout
     public static string HostSummary(VmConfig vm) => Path.Combine(vm.MappedDrivePath, "output", "summary.json");
     public static string HostExecutionLog(VmConfig vm) => Path.Combine(vm.MappedDrivePath, "output", "execution-log.txt");
 
-    // --- Run store paths (host-local, for archival) ---
+    // --- Run directory paths (externalized runtime) ---
 
-    public static string RunDir(string runStorePath, string runId) => Path.Combine(runStorePath, runId);
-    public static string RunRequestFile(string runStorePath, string runId) => Path.Combine(runStorePath, runId, "request.json");
-    public static string RunTaskPacketFile(string runStorePath, string runId) => Path.Combine(runStorePath, runId, "task-packet.json");
-    public static string RunStatusFile(string runStorePath, string runId) => Path.Combine(runStorePath, runId, "status.json");
-    public static string RunCostReportFile(string runStorePath, string runId) => Path.Combine(runStorePath, runId, "cost-report.json");
-    public static string RunReviewFile(string runStorePath, string runId) => Path.Combine(runStorePath, runId, "review.json");
-    public static string RunFinalStatusFile(string runStorePath, string runId) => Path.Combine(runStorePath, runId, "final-status.json");
+    public static string RunDir(string runsPath, string runId) => Path.Combine(runsPath, runId);
+    public static string RunRequestFile(string runsPath, string runId) => Path.Combine(runsPath, runId, "request.json");
+    public static string RunTaskPacketFile(string runsPath, string runId) => Path.Combine(runsPath, runId, "task-packet.json");
+    public static string RunStateFile(string runsPath, string runId) => Path.Combine(runsPath, runId, "state.json");
+    public static string RunEventsFile(string runsPath, string runId) => Path.Combine(runsPath, runId, "events.jsonl");
+    public static string RunResultFile(string runsPath, string runId) => Path.Combine(runsPath, runId, "result.json");
+    public static string RunCostReportFile(string runsPath, string runId) => Path.Combine(runsPath, runId, "cost-report.json");
+    public static string RunReviewFile(string runsPath, string runId) => Path.Combine(runsPath, runId, "review.json");
+    public static string RunLogsDir(string runsPath, string runId) => Path.Combine(runsPath, runId, "logs");
+    public static string RunArtifactsDir(string runsPath, string runId) => Path.Combine(runsPath, runId, "artifacts");
 
-    public static void EnsureRunDirectory(string runStorePath, string runId)
+    public static void EnsureRunDirectory(string runsPath, string runId)
     {
-        Directory.CreateDirectory(RunDir(runStorePath, runId));
+        var runDir = RunDir(runsPath, runId);
+        Directory.CreateDirectory(runDir);
+        Directory.CreateDirectory(Path.Combine(runDir, "logs"));
+        Directory.CreateDirectory(Path.Combine(runDir, "artifacts"));
     }
 }
