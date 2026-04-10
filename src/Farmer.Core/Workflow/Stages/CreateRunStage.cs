@@ -32,7 +32,7 @@ public sealed class CreateRunStage : IWorkflowStage
 
         state.RunRequest = request;
         await _runStore.SaveRunRequestAsync(request, ct);
-        await _runStore.SaveRunStatusAsync(state.ToRunStatus(), ct);
+        await _runStore.SaveRunStateAsync(state.ToRunStatus(), ct);
 
         return StageResult.Succeeded(Name);
     }

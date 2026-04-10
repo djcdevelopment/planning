@@ -53,7 +53,7 @@ public class CreateRunStageTests
 
         await stage.ExecuteAsync(state);
 
-        var status = await store.GetRunStatusAsync(state.RunId);
+        var status = await store.GetRunStateAsync(state.RunId);
         Assert.NotNull(status);
         Assert.Equal(state.RunId, status!.RunId);
     }
@@ -105,13 +105,13 @@ public class CreateRunStageTests
             return Task.FromResult(p);
         }
 
-        public Task SaveRunStatusAsync(RunStatus status, CancellationToken ct = default)
+        public Task SaveRunStateAsync(RunStatus status, CancellationToken ct = default)
         {
             _statuses[status.RunId] = status;
             return Task.CompletedTask;
         }
 
-        public Task<RunStatus?> GetRunStatusAsync(string runId, CancellationToken ct = default)
+        public Task<RunStatus?> GetRunStateAsync(string runId, CancellationToken ct = default)
         {
             _statuses.TryGetValue(runId, out var s);
             return Task.FromResult(s);

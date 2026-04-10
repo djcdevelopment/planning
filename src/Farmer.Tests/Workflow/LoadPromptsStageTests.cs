@@ -13,10 +13,13 @@ public class LoadPromptsStageTests : IDisposable
     private readonly string _tempDir;
     private readonly InMemoryRunStore _store = new();
 
+    private readonly string _samplePlansDir;
+
     public LoadPromptsStageTests()
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "farmer-test-" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(_tempDir);
+        _samplePlansDir = Path.Combine(_tempDir, "sample-plans");
+        Directory.CreateDirectory(_samplePlansDir);
     }
 
     public void Dispose()
@@ -27,13 +30,16 @@ public class LoadPromptsStageTests : IDisposable
 
     private LoadPromptsStage MakeStage()
     {
-        var settings = Options.Create(new FarmerSettings { SamplePlansPath = _tempDir });
+        var settings = Options.Create(new FarmerSettings
+        {
+            Paths = new PathsSettings { Data = _tempDir }
+        });
         return new LoadPromptsStage(settings, _store);
     }
 
     private void CreatePlanDir(string name, params string[] files)
     {
-        var dir = Path.Combine(_tempDir, name);
+        var dir = Path.Combine(_samplePlansDir, name);
         Directory.CreateDirectory(dir);
         foreach (var file in files)
         {
@@ -173,8 +179,8 @@ public class LoadPromptsStageTests : IDisposable
         public Task<RunRequest?> GetRunRequestAsync(string id, CancellationToken ct = default) { _requests.TryGetValue(id, out var r); return Task.FromResult(r); }
         public Task SaveTaskPacketAsync(TaskPacket p, CancellationToken ct = default) { _packets[p.RunId] = p; return Task.CompletedTask; }
         public Task<TaskPacket?> GetTaskPacketAsync(string id, CancellationToken ct = default) { _packets.TryGetValue(id, out var p); return Task.FromResult(p); }
-        public Task SaveRunStatusAsync(RunStatus s, CancellationToken ct = default) { _statuses[s.RunId] = s; return Task.CompletedTask; }
-        public Task<RunStatus?> GetRunStatusAsync(string id, CancellationToken ct = default) { _statuses.TryGetValue(id, out var s); return Task.FromResult(s); }
+        public Task SaveRunStateAsync(RunStatus s, CancellationToken ct = default) { _statuses[s.RunId] = s; return Task.CompletedTask; }
+        public Task<RunStatus?> GetRunStateAsync(string id, CancellationToken ct = default) { _statuses.TryGetValue(id, out var s); return Task.FromResult(s); }
         public Task SaveCostReportAsync(CostReport r, CancellationToken ct = default) => Task.CompletedTask;
         public Task SaveReviewVerdictAsync(ReviewVerdict v, CancellationToken ct = default) => Task.CompletedTask;
         public Task<IReadOnlyList<string>> ListRunIdsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<string>>(_requests.Keys.ToList());

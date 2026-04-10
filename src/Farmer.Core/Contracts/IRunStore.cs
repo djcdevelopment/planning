@@ -10,8 +10,8 @@ public interface IRunStore
     Task SaveTaskPacketAsync(TaskPacket packet, CancellationToken ct = default);
     Task<TaskPacket?> GetTaskPacketAsync(string runId, CancellationToken ct = default);
 
-    Task SaveRunStatusAsync(RunStatus status, CancellationToken ct = default);
-    Task<RunStatus?> GetRunStatusAsync(string runId, CancellationToken ct = default);
+    Task SaveRunStateAsync(RunStatus status, CancellationToken ct = default);
+    Task<RunStatus?> GetRunStateAsync(string runId, CancellationToken ct = default);
 
     Task SaveCostReportAsync(CostReport report, CancellationToken ct = default);
     Task SaveReviewVerdictAsync(ReviewVerdict verdict, CancellationToken ct = default);
