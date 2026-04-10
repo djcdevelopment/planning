@@ -25,7 +25,7 @@ builder.Services.AddSingleton<IMappedDriveReader, MappedDriveReader>();
 builder.Services.AddSingleton<IRunStore, FileRunStore>();
 builder.Services.AddSingleton<IVmManager, VmManager>();
 
-// --- Workflow stages (EXPLICIT ORDER — registration order is pipeline order) ---
+// --- Workflow stages (resolved by WorkflowPipelineFactory in pipeline order) ---
 builder.Services.AddSingleton<CreateRunStage>();
 builder.Services.AddSingleton<LoadPromptsStage>();
 builder.Services.AddSingleton<ReserveVmStage>();
@@ -34,35 +34,18 @@ builder.Services.AddSingleton<DispatchStage>();
 builder.Services.AddSingleton<CollectStage>();
 builder.Services.AddSingleton<ReviewStage>();
 
-builder.Services.AddSingleton<IEnumerable<IWorkflowStage>>(sp => new IWorkflowStage[]
-{
-    sp.GetRequiredService<CreateRunStage>(),
-    sp.GetRequiredService<LoadPromptsStage>(),
-    sp.GetRequiredService<ReserveVmStage>(),
-    sp.GetRequiredService<DeliverStage>(),
-    sp.GetRequiredService<DispatchStage>(),
-    sp.GetRequiredService<CollectStage>(),
-    sp.GetRequiredService<ReviewStage>(),
-});
-
-// --- Middleware (registration order = execution order, outermost first) ---
+// --- Stateless middleware (resolved by WorkflowPipelineFactory) ---
+// CostTrackingMiddleware is NOT registered here — the factory creates a
+// fresh instance per run so per-run cost state never bleeds across runs.
 builder.Services.AddSingleton<TelemetryMiddleware>();
 builder.Services.AddSingleton<LoggingMiddleware>();
 builder.Services.AddSingleton<EventingMiddleware>();
-builder.Services.AddSingleton<CostTrackingMiddleware>();
 builder.Services.AddSingleton<HeartbeatMiddleware>();
 
-builder.Services.AddSingleton<IEnumerable<IWorkflowMiddleware>>(sp => new IWorkflowMiddleware[]
-{
-    sp.GetRequiredService<TelemetryMiddleware>(),
-    sp.GetRequiredService<LoggingMiddleware>(),
-    sp.GetRequiredService<EventingMiddleware>(),
-    sp.GetRequiredService<CostTrackingMiddleware>(),
-    sp.GetRequiredService<HeartbeatMiddleware>(),
-});
-
-// --- Workflow ---
-builder.Services.AddSingleton<RunWorkflow>();
+// --- Workflow factory ---
+// Builds (RunWorkflow, CostTrackingMiddleware) per call. RunWorkflow is no
+// longer a singleton because the cost tracker it composes must be per-run.
+builder.Services.AddSingleton<WorkflowPipelineFactory>();
 
 // --- Background services ---
 builder.Services.AddSingleton<RunDirectoryFactory>();
@@ -111,7 +94,11 @@ app.MapGet("/runs/{runId}", async (string runId, IRunStore store) =>
     return state is not null ? Results.Ok(state) : Results.NotFound();
 });
 
-app.MapPost("/trigger", async (HttpContext ctx, RunDirectoryFactory factory, RunWorkflow workflow) =>
+app.MapPost("/trigger", async (
+    HttpContext ctx,
+    RunDirectoryFactory dirFactory,
+    WorkflowPipelineFactory pipelineFactory,
+    IRunStore runStore) =>
 {
     using var reader = new StreamReader(ctx.Request.Body);
     var body = await reader.ReadToEndAsync();
@@ -120,9 +107,15 @@ app.MapPost("/trigger", async (HttpContext ctx, RunDirectoryFactory factory, Run
 
     try
     {
-        var runDir = await factory.CreateFromInboxFileAsync(tempFile);
+        var runDir = await dirFactory.CreateFromInboxFileAsync(tempFile);
         File.Delete(tempFile);
+
+        var (workflow, costTracker) = pipelineFactory.Create();
         var result = await workflow.ExecuteFromDirectoryAsync(runDir);
+
+        var costReport = costTracker.GetReport(result.RunId);
+        await runStore.SaveCostReportAsync(costReport);
+
         return Results.Ok(result);
     }
     catch (Exception ex)

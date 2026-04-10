@@ -1,4 +1,5 @@
 using Farmer.Core.Config;
+using Farmer.Core.Contracts;
 using Farmer.Core.Workflow;
 using Microsoft.Extensions.Options;
 
@@ -8,23 +9,29 @@ namespace Farmer.Host.Services;
 /// Background service that polls the inbox directory for trigger files and
 /// starts workflow execution. Intentionally single-run sequential processing
 /// for Phase 5 — not yet concurrency-safe.
+///
+/// Builds a fresh workflow + cost tracker per run via WorkflowPipelineFactory,
+/// then persists the cost report after completion.
 /// </summary>
 public sealed class InboxWatcher : BackgroundService
 {
     private readonly FarmerSettings _settings;
     private readonly RunDirectoryFactory _runDirFactory;
-    private readonly RunWorkflow _workflow;
+    private readonly WorkflowPipelineFactory _pipelineFactory;
+    private readonly IRunStore _runStore;
     private readonly ILogger<InboxWatcher> _logger;
 
     public InboxWatcher(
         IOptions<FarmerSettings> settings,
         RunDirectoryFactory runDirFactory,
-        RunWorkflow workflow,
+        WorkflowPipelineFactory pipelineFactory,
+        IRunStore runStore,
         ILogger<InboxWatcher> logger)
     {
         _settings = settings.Value;
         _runDirFactory = runDirFactory;
-        _workflow = workflow;
+        _pipelineFactory = pipelineFactory;
+        _runStore = runStore;
         _logger = logger;
     }
 
@@ -83,7 +90,13 @@ public sealed class InboxWatcher : BackgroundService
 
         try
         {
-            var result = await _workflow.ExecuteFromDirectoryAsync(runDir, ct);
+            // Fresh workflow + cost tracker per run — no shared state across runs.
+            var (workflow, costTracker) = _pipelineFactory.Create();
+            var result = await workflow.ExecuteFromDirectoryAsync(runDir, ct);
+
+            var costReport = costTracker.GetReport(result.RunId);
+            await _runStore.SaveCostReportAsync(costReport, ct);
+
             _logger.LogInformation("Workflow {Outcome} for run {RunId}",
                 result.Success ? "completed" : "failed", runId);
         }

@@ -52,10 +52,6 @@ public sealed class RunWorkflow
             RunDirectory = runDir
         };
 
-        // Reset stateful middleware for this run (Phase 5 singleton compromise)
-        var costMiddleware = _middleware.OfType<CostTrackingMiddleware>().FirstOrDefault();
-        costMiddleware?.Reset();
-
         using var activity = FarmerActivitySource.StartRun(state.RunId);
         FarmerMetrics.RunsStarted.Add(1);
 
