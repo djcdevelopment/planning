@@ -17,8 +17,12 @@ public sealed class CreateRunStage : IWorkflowStage
 
     public async Task<StageResult> ExecuteAsync(RunFlowState state, CancellationToken ct = default)
     {
-        state.RunId = $"run-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..6]}";
-        state.TaskId = $"task-{Guid.NewGuid().ToString("N")[..8]}";
+        // Skip ID generation if already set (e.g. from ExecuteFromDirectoryAsync)
+        if (string.IsNullOrEmpty(state.RunId))
+        {
+            state.RunId = $"run-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..6]}";
+            state.TaskId = $"task-{Guid.NewGuid().ToString("N")[..8]}";
+        }
 
         var request = new RunRequest
         {

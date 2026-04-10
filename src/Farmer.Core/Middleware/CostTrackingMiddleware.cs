@@ -36,6 +36,16 @@ public sealed class CostTrackingMiddleware : IWorkflowMiddleware
         return result;
     }
 
+    /// <summary>
+    /// Phase 5 compromise: reset state between runs when registered as singleton.
+    /// Not concurrency-safe — acceptable for sequential InboxWatcher processing.
+    /// </summary>
+    public void Reset()
+    {
+        _stageCosts.Clear();
+        _totalStopwatch.Reset();
+    }
+
     public CostReport GetReport(string runId)
     {
         _totalStopwatch.Stop();
