@@ -38,7 +38,7 @@ public class DiCompositionTests
         services.AddSingleton<IRunStore, FileRunStore>();
         services.AddSingleton<IVmManager, VmManager>();
 
-        // Stages (explicit order)
+        // Stages — resolved by WorkflowPipelineFactory
         services.AddSingleton<CreateRunStage>();
         services.AddSingleton<LoadPromptsStage>();
         services.AddSingleton<ReserveVmStage>();
@@ -47,43 +47,23 @@ public class DiCompositionTests
         services.AddSingleton<CollectStage>();
         services.AddSingleton<ReviewStage>();
 
-        services.AddSingleton<IEnumerable<IWorkflowStage>>(sp => new IWorkflowStage[]
-        {
-            sp.GetRequiredService<CreateRunStage>(),
-            sp.GetRequiredService<LoadPromptsStage>(),
-            sp.GetRequiredService<ReserveVmStage>(),
-            sp.GetRequiredService<DeliverStage>(),
-            sp.GetRequiredService<DispatchStage>(),
-            sp.GetRequiredService<CollectStage>(),
-            sp.GetRequiredService<ReviewStage>(),
-        });
-
-        // Middleware
+        // Stateless middleware — resolved by WorkflowPipelineFactory.
+        // CostTrackingMiddleware is NOT registered: factory creates it per-run.
         services.AddSingleton<TelemetryMiddleware>();
         services.AddSingleton<LoggingMiddleware>();
         services.AddSingleton<EventingMiddleware>();
-        services.AddSingleton<CostTrackingMiddleware>();
         services.AddSingleton<HeartbeatMiddleware>();
 
-        services.AddSingleton<IEnumerable<IWorkflowMiddleware>>(sp => new IWorkflowMiddleware[]
-        {
-            sp.GetRequiredService<TelemetryMiddleware>(),
-            sp.GetRequiredService<LoggingMiddleware>(),
-            sp.GetRequiredService<EventingMiddleware>(),
-            sp.GetRequiredService<CostTrackingMiddleware>(),
-            sp.GetRequiredService<HeartbeatMiddleware>(),
-        });
-
-        services.AddSingleton<RunWorkflow>();
+        services.AddSingleton<WorkflowPipelineFactory>();
 
         return services.BuildServiceProvider();
     }
 
     [Fact]
-    public void AllServicesResolve()
+    public void AllInfrastructureServicesResolve()
     {
         using var sp = BuildProvider();
-        Assert.NotNull(sp.GetRequiredService<RunWorkflow>());
+        Assert.NotNull(sp.GetRequiredService<WorkflowPipelineFactory>());
         Assert.NotNull(sp.GetRequiredService<ISshService>());
         Assert.NotNull(sp.GetRequiredService<IMappedDriveReader>());
         Assert.NotNull(sp.GetRequiredService<IRunStore>());
@@ -91,10 +71,18 @@ public class DiCompositionTests
     }
 
     [Fact]
-    public void StagesResolveInExactOrder()
+    public void Factory_BuildsWorkflowWithStagesInExactOrder()
     {
         using var sp = BuildProvider();
-        var stages = sp.GetRequiredService<IEnumerable<IWorkflowStage>>().ToList();
+        var factory = sp.GetRequiredService<WorkflowPipelineFactory>();
+
+        var (workflow, _) = factory.Create();
+
+        // Inspect via reflection — _stages is private
+        var stagesField = typeof(RunWorkflow).GetField("_stages",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(stagesField);
+        var stages = (IReadOnlyList<IWorkflowStage>)stagesField!.GetValue(workflow)!;
 
         Assert.Equal(7, stages.Count);
         Assert.Equal("CreateRun", stages[0].Name);
@@ -107,10 +95,17 @@ public class DiCompositionTests
     }
 
     [Fact]
-    public void MiddlewareResolvesInExpectedOrder()
+    public void Factory_BuildsWorkflowWithMiddlewareInOutermostFirstOrder()
     {
         using var sp = BuildProvider();
-        var middleware = sp.GetRequiredService<IEnumerable<IWorkflowMiddleware>>().ToList();
+        var factory = sp.GetRequiredService<WorkflowPipelineFactory>();
+
+        var (workflow, _) = factory.Create();
+
+        var middlewareField = typeof(RunWorkflow).GetField("_middleware",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(middlewareField);
+        var middleware = (IReadOnlyList<IWorkflowMiddleware>)middlewareField!.GetValue(workflow)!;
 
         Assert.Equal(5, middleware.Count);
         Assert.IsType<TelemetryMiddleware>(middleware[0]);
@@ -118,5 +113,29 @@ public class DiCompositionTests
         Assert.IsType<EventingMiddleware>(middleware[2]);
         Assert.IsType<CostTrackingMiddleware>(middleware[3]);
         Assert.IsType<HeartbeatMiddleware>(middleware[4]);
+    }
+
+    [Fact]
+    public void Factory_ReturnsFreshCostTrackerPerCall()
+    {
+        using var sp = BuildProvider();
+        var factory = sp.GetRequiredService<WorkflowPipelineFactory>();
+
+        var (_, costTracker1) = factory.Create();
+        var (_, costTracker2) = factory.Create();
+
+        Assert.NotSame(costTracker1, costTracker2);
+    }
+
+    [Fact]
+    public void Factory_ReturnsFreshWorkflowPerCall()
+    {
+        using var sp = BuildProvider();
+        var factory = sp.GetRequiredService<WorkflowPipelineFactory>();
+
+        var (workflow1, _) = factory.Create();
+        var (workflow2, _) = factory.Create();
+
+        Assert.NotSame(workflow1, workflow2);
     }
 }
