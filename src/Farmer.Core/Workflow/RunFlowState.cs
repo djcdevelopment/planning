@@ -21,6 +21,12 @@ public sealed class RunFlowState
     public List<string> StagesCompleted { get; set; } = [];
     public string? LastError { get; set; }
 
+    /// <summary>
+    /// Set by ExecuteFromDirectoryAsync. Used by EventingMiddleware to write
+    /// events.jsonl and state.json. Null when running via the in-memory test path.
+    /// </summary>
+    public string? RunDirectory { get; set; }
+
     public void AdvanceTo(RunPhase phase)
     {
         Phase = phase;
