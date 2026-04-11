@@ -131,21 +131,21 @@ public class Phase6ModelTests
     }
 
     [Fact]
-    public void AnthropicSettings_ResolveApiKey_PrefersExplicitValue()
+    public void OpenAISettings_ResolveApiKey_PrefersExplicitValue()
     {
-        var settings = new AnthropicSettings { ApiKey = "sk-explicit" };
+        var settings = new OpenAISettings { ApiKey = "sk-explicit" };
         Assert.Equal("sk-explicit", settings.ResolveApiKey());
     }
 
     [Fact]
-    public void AnthropicSettings_ResolveApiKey_FallsBackToEnvironment()
+    public void OpenAISettings_ResolveApiKey_FallsBackToEnvironment()
     {
-        const string envVar = "ANTHROPIC_API_KEY";
+        const string envVar = "OPENAI_API_KEY";
         var original = Environment.GetEnvironmentVariable(envVar);
         try
         {
             Environment.SetEnvironmentVariable(envVar, "sk-from-env");
-            var settings = new AnthropicSettings { ApiKey = "" };
+            var settings = new OpenAISettings { ApiKey = "" };
             Assert.Equal("sk-from-env", settings.ResolveApiKey());
         }
         finally
@@ -155,10 +155,10 @@ public class Phase6ModelTests
     }
 
     [Fact]
-    public void AnthropicSettings_HasHaikuAsDefaultQaModel()
+    public void OpenAISettings_HasGpt4oMiniAsDefaultQaModel()
     {
-        var settings = new AnthropicSettings();
-        Assert.Equal("claude-haiku-4-5", settings.QaModel);
+        var settings = new OpenAISettings();
+        Assert.Equal("gpt-4o-mini", settings.QaModel);
     }
 
     [Fact]
