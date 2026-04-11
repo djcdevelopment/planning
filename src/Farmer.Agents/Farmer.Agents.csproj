@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!--
+      This project hosts the Microsoft Agent Framework (MAF) surface for
+      Farmer. It is the ONLY project that imports Microsoft.Agents.* or
+      Microsoft.Extensions.AI.* types. Farmer.Core stays on the stable
+      .NET 8 Extensions 8.x line; this project follows MAF's 10.x/1.x lines.
+
+      Provider: OpenAI. Originally planned to use Microsoft.Agents.AI.Anthropic
+      but pivoted to OpenAI for (a) cleaner structured-output path via
+      AgentResponse<T> and (b) better docs. See docs/plan notes.
+      The VM worker is still Claude CLI in full dangerous mode — that's a
+      separate concern about VM isolation and worker autonomy, unrelated to
+      the host-side retrospective agent's provider choice.
+
+      All packages are STABLE as of April 2026 (1.1.0 / 10.4.1). No preview
+      dependencies in this project. If OpenAI or MAF churn later, the blast
+      radius is still this one project.
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- MAF core + OpenAI provider, all stable -->
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.1.0" />
+    <PackageReference Include="Microsoft.Agents.AI.Abstractions" Version="1.1.0" />
+    <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.1.0" />
+
+    <!-- Microsoft.Extensions.AI stable abstractions -->
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.4.1" />
+
+    <!-- For Configure<T>(IConfigurationSection) extension used in
+         ServiceCollectionExtensions.AddFarmerAgents -->
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.3" />
+
+    <!-- Options / Logging come in transitively from MAF on the 10.x line.
+         We don't explicitly pin 8.x here because that creates a downgrade
+         conflict; Farmer.Core keeps its 8.x pins separately. -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Farmer.Core\Farmer.Core.csproj" />
+  </ItemGroup>
+
+</Project>
