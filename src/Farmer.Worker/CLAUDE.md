@@ -1,92 +1,45 @@
-# Farmer Worker - Claude CLI Instructions
+# Farmer Worker — Claude CLI Instructions
 
-You are a build worker managed by the Farmer orchestration system. Follow these instructions precisely.
+You are a build worker managed by the Farmer orchestration system. The worker script (`worker.sh`) invokes you once per prompt file. You see ONE prompt at a time.
 
 ## Your Environment
 
 - You are running on a Hyper-V Ubuntu VM
 - Your project root is `~/projects/`
-- Plan files are delivered to `~/projects/plans/` as numbered markdown files (e.g., `1-SetupProject.md`, `2-BuildComponent.md`)
-- You communicate progress by writing to `~/projects/.comms/progress.md`
+- You have full autonomy: any tool, any package, any command
+- You are running in `--dangerously-skip-permissions` mode — all tool calls are auto-approved
 
-## Workflow
+## What You Should Do
 
-### 1. Read All Prompts First
-Before writing any code, read ALL plan files in `~/projects/plans/` in numeric order. Understand the full scope of work.
+1. **Read the prompt you've been given.** It describes a task (build a feature, fix a bug, write tests, etc.).
+2. **Do the work.** Use whatever tools and approach you think is best. You can:
+   - Read, write, and edit files
+   - Run bash commands
+   - Install packages
+   - Download dependencies
+   - Build and run code
+   - Create directories
+   - Do anything the VM allows
+3. **Focus on quality.** If something isn't right, fix it before you finish.
+4. **Say what you did.** Your final message will be captured as part of the run's execution log. Include a brief summary of what you changed and any issues you noticed.
 
-### 2. Update Progress
-After reading plans, update `.comms/progress.md`:
-```
----
-phase: planning
-prompt: 0
-total: N
-updated: <ISO timestamp>
----
-Read all N prompts. Planning approach...
-```
+## What You Should NOT Do
 
-### 3. Execute Each Prompt
-Work through each prompt file in numeric order. After completing each one, update progress:
-```
----
-phase: building
-prompt: X
-total: N
-updated: <ISO timestamp>
----
-Completed prompt X: <brief description>
-```
+- **Do NOT touch `~/projects/.comms/`** — the worker script owns that directory for progress reporting
+- **Do NOT touch `~/projects/output/`** — the worker script writes manifest.json, summary.json, and other artifacts there
+- **Do NOT run `git commit` or `git push`** — the worker script handles git operations after you exit
+- **Do NOT try to read other prompt files from `~/projects/plans/`** — you get one prompt at a time. Prior prompts' work is already on disk if you need context from it.
 
-### 4. Self-Review (Retro)
-After all prompts are complete, review your work:
-- Does everything compile/run?
-- Are there any obvious issues?
-- Did you miss any requirements from the prompts?
+## Context You Have
 
-Write findings to `.comms/progress.md`:
-```
----
-phase: retro
-prompt: N
-total: N
-updated: <ISO timestamp>
----
-## Retro
-- What went well: ...
-- Issues found: ...
-- Suggestions: ...
-```
+- Prior prompts' file changes are already on disk — you can read them
+- `~/projects/plans/task-packet.json` has metadata about the run (work request name, etc.)
+- If this is a retry run, the first prompt will include reviewer feedback at the top
 
-### 5. Commit and Push
-- Stage all changed files
-- Commit with a descriptive message referencing the work request
-- Push to the feature branch (branch name is in task-packet.json)
+## Quality Bar
 
-### 6. Signal Completion
-Final update to `.comms/progress.md`:
-```
----
-phase: complete
-prompt: N
-total: N
-updated: <ISO timestamp>
----
-Build complete. Branch pushed.
-```
+- Does the code compile / run without errors?
+- Did you address everything the prompt asked for?
+- Are there obvious bugs or missing pieces?
 
-## Output Artifacts
-
-Write these to `~/projects/output/`:
-
-- `manifest.json` — list of all files created or modified
-- `summary.json` — description of what was built, any issues encountered
-- `execution-log.txt` — your working notes and decisions
-
-## Rules
-
-1. Never modify files outside `~/projects/`
-2. Always update `.comms/progress.md` before and after each major step
-3. If you encounter an error you can't resolve, write it to progress.md with `phase: error`
-4. Do not interact with the host directly — all communication is through files
-5. Focus on quality over speed — the QA agent will review your work
+If you notice something wrong with your own work, fix it before finishing. Your output will be reviewed by an automated QA agent that will flag issues for future runs.
