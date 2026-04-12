@@ -64,7 +64,9 @@ builder.Services.AddOpenTelemetry()
     {
         tracing.SetResourceBuilder(otelResource);
         tracing.AddSource(FarmerActivitySource.Name);
+        tracing.AddSource("Experimental.Microsoft.Agents.AI"); // MAF agent spans
         tracing.AddAspNetCoreInstrumentation();
+        tracing.AddHttpClientInstrumentation(); // outbound OpenAI API calls
         if (telemetrySettings.EnableOtlpExporter)
             tracing.AddOtlpExporter(o => o.Endpoint = new Uri(telemetrySettings.OtlpEndpoint));
         if (telemetrySettings.EnableConsoleExporter)
@@ -74,6 +76,7 @@ builder.Services.AddOpenTelemetry()
     {
         metrics.SetResourceBuilder(otelResource);
         metrics.AddMeter(FarmerMetrics.MeterName);
+        metrics.AddMeter("Experimental.Microsoft.Agents.AI"); // MAF agent metrics
         if (telemetrySettings.EnableOtlpExporter)
             metrics.AddOtlpExporter(o => o.Endpoint = new Uri(telemetrySettings.OtlpEndpoint));
         if (telemetrySettings.EnableConsoleExporter)
