@@ -31,11 +31,18 @@ namespace Farmer.Agents;
 /// </summary>
 public sealed class MafRetrospectiveAgent : IRetrospectiveAgent
 {
-    private readonly AIAgent _agent;
+    private readonly Lazy<AIAgent?> _agentLazy;
     private readonly OpenAISettings _openAi;
     private readonly RetrospectiveSettings _settings;
     private readonly ILogger<MafRetrospectiveAgent> _logger;
 
+    /// <summary>
+    /// Production constructor. Does NOT throw on missing API key — the key
+    /// is resolved lazily when <see cref="AnalyzeAsync"/> is first called.
+    /// If the key is unset, the stage applies <see cref="RetrospectiveSettings.FailureBehavior"/>
+    /// (default AutoPass) so the pipeline still completes. Per ADR-007:
+    /// a failed retrospective is a lost learning opportunity, not a failed run.
+    /// </summary>
     public MafRetrospectiveAgent(
         IOptions<OpenAISettings> openAi,
         IOptions<RetrospectiveSettings> settings,
@@ -44,21 +51,7 @@ public sealed class MafRetrospectiveAgent : IRetrospectiveAgent
         _openAi = openAi.Value;
         _settings = settings.Value;
         _logger = logger;
-
-        var apiKey = _openAi.ResolveApiKey()
-            ?? throw new InvalidOperationException(
-                "OpenAI API key not configured. Set Farmer:OpenAI:ApiKey in " +
-                "user-secrets or OPENAI_API_KEY in the environment.");
-
-        var openAiClient = new OpenAIClient(apiKey);
-        var openAiChatClient = openAiClient.GetChatClient(_openAi.QaModel);
-
-        // OpenAI's ChatClient → Microsoft.Extensions.AI.IChatClient (via
-        // Microsoft.Extensions.AI.OpenAI's AsIChatClient extension) →
-        // Microsoft.Agents.AI.AIAgent (via MAF's ChatClientExtensions.AsAIAgent).
-        _agent = openAiChatClient.AsIChatClient().AsAIAgent(
-            instructions: RetrospectivePrompt.SystemInstructions,
-            name: "FarmerRetrospectiveAgent");
+        _agentLazy = new Lazy<AIAgent?>(TryBuildAgent, LazyThreadSafetyMode.PublicationOnly);
     }
 
     /// <summary>
@@ -70,10 +63,28 @@ public sealed class MafRetrospectiveAgent : IRetrospectiveAgent
         IOptions<RetrospectiveSettings> settings,
         ILogger<MafRetrospectiveAgent> logger)
     {
-        _agent = agent;
+        _agentLazy = new Lazy<AIAgent?>(() => agent);
         _openAi = new OpenAISettings();
         _settings = settings.Value;
         _logger = logger;
+    }
+
+    private AIAgent? TryBuildAgent()
+    {
+        var apiKey = _openAi.ResolveApiKey();
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            _logger.LogWarning(
+                "OpenAI API key not configured. Retrospectives will be skipped. " +
+                "Set OPENAI_API_KEY or Farmer:OpenAI:ApiKey.");
+            return null;
+        }
+
+        var openAiClient = new OpenAIClient(apiKey);
+        var openAiChatClient = openAiClient.GetChatClient(_openAi.QaModel);
+        return openAiChatClient.AsIChatClient().AsAIAgent(
+            instructions: RetrospectivePrompt.SystemInstructions,
+            name: "FarmerRetrospectiveAgent");
     }
 
     public async Task<RetrospectiveResult> AnalyzeAsync(
@@ -81,6 +92,16 @@ public sealed class MafRetrospectiveAgent : IRetrospectiveAgent
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(context);
+
+        var agent = _agentLazy.Value;
+        if (agent is null)
+        {
+            return new RetrospectiveResult
+            {
+                Error = "OpenAI API key not configured. Set OPENAI_API_KEY or Farmer:OpenAI:ApiKey.",
+                AgentCallAttempts = 0,
+            };
+        }
 
         using var activity = FarmerActivitySource.StartAgentReview(
             context.RunId, "FarmerRetrospectiveAgent");
@@ -104,7 +125,7 @@ public sealed class MafRetrospectiveAgent : IRetrospectiveAgent
                 // Typed structured output — the SDK enforces the schema from
                 // RetrospectiveDto's shape. No hand-rolled JSON parser, no
                 // code-fence stripping, no per-field validation.
-                var response = await _agent.RunAsync<RetrospectiveDto>(
+                var response = await agent.RunAsync<RetrospectiveDto>(
                     userMessage,
                     cancellationToken: ct);
 

@@ -27,6 +27,12 @@ public sealed class RunFlowState
     /// </summary>
     public string? RunDirectory { get; set; }
 
+    /// <summary>
+    /// Set by RetrospectiveStage after the QA agent call. Null if the
+    /// pipeline didn't reach the retrospective stage or the agent failed.
+    /// </summary>
+    public ReviewVerdict? ReviewVerdict { get; set; }
+
     public void AdvanceTo(RunPhase phase)
     {
         Phase = phase;

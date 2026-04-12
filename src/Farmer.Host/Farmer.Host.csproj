@@ -14,6 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Farmer.Agents\Farmer.Agents.csproj" />
     <ProjectReference Include="..\Farmer.Core\Farmer.Core.csproj" />
     <ProjectReference Include="..\Farmer.Tools\Farmer.Tools.csproj" />
   </ItemGroup>

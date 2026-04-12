@@ -41,7 +41,7 @@ public sealed class WorkflowPipelineFactory
             _sp.GetRequiredService<DeliverStage>(),
             _sp.GetRequiredService<DispatchStage>(),
             _sp.GetRequiredService<CollectStage>(),
-            _sp.GetRequiredService<ReviewStage>(),
+            _sp.GetRequiredService<RetrospectiveStage>(),
         };
 
         // Fresh per-run instance — no Reset() needed.
