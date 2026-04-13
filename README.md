@@ -2,7 +2,7 @@
 
 A .NET 8 control plane that orchestrates Claude CLI workers on Hyper-V Ubuntu VMs, with a retrospective agent on the host (via Microsoft Agent Framework + OpenAI) that reviews every run's output. Filesystem-first runtime, OpenTelemetry throughout, inbox-triggered, designed for Azure/.NET developers learning agent orchestration.
 
-**Status:** Phase 6 in progress (retrospective loop). Phase 5 shipped (externalized runtime, real SSH end-to-end verified). See [docs/](./docs/) and the branch list below.
+**Status:** Phase 6 shipped (real worker + MAF-powered retrospective loop). Phase 5 shipped (externalized runtime, real SSH end-to-end verified). See [docs/](./docs/) and the branch list below.
 
 ---
 
@@ -127,7 +127,7 @@ Phase work lives on feature branches; nothing has been merged to `main` yet beyo
 | `main` | Initial scaffold + license notice. Phase 5/6 work not yet merged. |
 | `claude/phase5-externalized-runtime` | The architectural Phase 5 work (7 commits) |
 | `claude/phase5-end-to-end-verification` | Phase 5 + real SSH end-to-end verified (5 more commits on top) |
-| `claude/phase6-retrospective-loop` | **Current active branch.** Phase 6 foundations + `Farmer.Agents` + MAF OpenAI integration |
+| `claude/phase6-retrospective-loop` | **Current active branch.** Phase 6 complete: real worker + MAF OpenAI retrospective agent + 9 ADRs |
 | `claude/phase5-otel-api` | Parallel Phase 5 work from another agent (different architecture, see ADR-005 for context) |
 
 Merging any of these to `main` is deferred until Phase 6 ships end-to-end.

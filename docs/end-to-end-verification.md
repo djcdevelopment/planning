@@ -107,7 +107,7 @@ A successful end-to-end run satisfies all of the following. Any failure means st
   - `logs\` (directory)
   - `artifacts\` (directory)
 - [ ] `events.jsonl` has exactly 14 lines — seven stages × two events each (stage.started + stage.completed)
-- [ ] The final event is `Review.stage.completed`
+- [ ] The final event is `Retrospective.stage.completed`
 - [ ] `state.json` shows `phase: "Complete"` with no `error` field
 - [ ] `result.json` shows `success: true`, `final_phase: "Complete"`, and all 7 stages in `stages_completed`
 - [ ] `cost-report.json` has 7 stage entries with non-zero durations
