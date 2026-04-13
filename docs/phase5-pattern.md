@@ -249,14 +249,12 @@ src/Farmer.Worker/
 
 ---
 
-## The Pieces Future Phases Will Add
+## Phase 6 Updates
 
-These are explicitly **out of scope** for Phase 5 but the pattern leaves room for them:
+Phase 6 shipped the first two items below and reframed the third. The Phase 5 invariants held throughout — none were broken. For the full Phase 6 architecture, see [docs/phase6-retro-verification.md](./phase6-retro-verification.md) and the [ADRs](./adr/README.md) (especially ADR-005 through ADR-009).
 
-1. **`worker.sh`** — VM-side script that the `DispatchStage` triggers via SSH. Reads `task-packet.json`, runs Claude CLI per prompt, writes `output/manifest.json`.
-2. **QA inspection agent** — host-side OpenAI client that reads a finished `runs/{run_id}/` and writes `review.json`.
-3. **Retry loop** — `ReviewStage` reads `review.json`, decides retry/accept/reject, optionally re-injects with feedback.
-4. **`outbox/` writer** — final artifacts copied or symlinked here for downstream consumers.
-5. **Concurrency** — `Channel<T>` between `InboxWatcher` and a worker pool, `CostTrackingMiddleware` made per-run via DI scope.
-
-None of these require breaking the Phase 5 invariants.
+1. **`worker.sh`** — **Done (Phase 6).** Real Claude CLI in full dangerous mode. Runs per prompt, writes `manifest.json` + `summary.json` + `worker-retro.md`. `ReviewStage` renamed to `RetrospectiveStage`.
+2. **Retrospective agent** — **Done (Phase 6).** `MafRetrospectiveAgent` using Microsoft Agent Framework + OpenAI `gpt-4o-mini`. Writes `qa-retro.md` + `review.json` + `directive-suggestions.md`. See [ADR-006](./adr/adr-006-openai-over-anthropic-maf.md) for the provider pivot and [ADR-007](./adr/adr-007-qa-as-postmortem.md) for the post-mortem-not-gate framing.
+3. **Retry loop** — **Deferred.** QA is a post-mortem, not a gate (ADR-007). No retry loop in Phase 6. Verdict is metadata. Manual re-run is the retry mechanism.
+4. **`outbox/` writer** — deferred to Phase 7+.
+5. **Concurrency** — deferred. `WorkflowPipelineFactory` (ADR-004) already makes per-run isolation possible by construction.
