@@ -87,12 +87,22 @@ public sealed class SshService : ISshService, IDisposable
             ?? throw new ArgumentException($"VM '{vmName}' not found in configuration");
     }
 
+    private string ResolveKeyPath()
+    {
+        var configured = _settings.SshKeyPath;
+        if (Path.IsPathRooted(configured))
+            return configured;
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".ssh",
+            configured);
+    }
+
     private SshClient GetOrCreateSshClient(VmConfig vm)
     {
         return _clients.GetOrAdd(vm.Name, _ =>
         {
-            var client = new SshClient(vm.SshHost, vm.SshUser, new PrivateKeyFile(
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh", "id_rsa")));
+            var client = new SshClient(vm.SshHost, vm.SshUser, new PrivateKeyFile(ResolveKeyPath()));
             client.Connect();
             return client;
         });
@@ -102,8 +112,7 @@ public sealed class SshService : ISshService, IDisposable
     {
         return _scpClients.GetOrAdd(vm.Name, _ =>
         {
-            var client = new ScpClient(vm.SshHost, vm.SshUser, new PrivateKeyFile(
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh", "id_rsa")));
+            var client = new ScpClient(vm.SshHost, vm.SshUser, new PrivateKeyFile(ResolveKeyPath()));
             client.Connect();
             return client;
         });

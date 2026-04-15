@@ -65,9 +65,20 @@ public sealed class RunWorkflow
         // Write result.json (atomic)
         var resultPath = Path.Combine(runDir, "result.json");
         var resultJson = JsonSerializer.Serialize(result, JsonOptions);
-        var tmpPath = resultPath + ".tmp";
-        await File.WriteAllTextAsync(tmpPath, resultJson, ct);
-        File.Move(tmpPath, resultPath, overwrite: true);
+        var resultTmpPath = resultPath + ".tmp";
+        await File.WriteAllTextAsync(resultTmpPath, resultJson, ct);
+        File.Move(resultTmpPath, resultPath, overwrite: true);
+
+        // Write final state.json (atomic) — supersedes any intermediate snapshots
+        // EventingMiddleware wrote during the run. The middleware's last write is
+        // always one step behind reality on successful runs because RunWorkflow
+        // calls RecordStageComplete and AdvanceTo(Complete) AFTER the middleware
+        // chain returns. This final write closes the anti-drift loop for success.
+        var statePath = Path.Combine(runDir, "state.json");
+        var stateJson = JsonSerializer.Serialize(state.ToRunStatus(), JsonOptions);
+        var stateTmpPath = statePath + ".tmp";
+        await File.WriteAllTextAsync(stateTmpPath, stateJson, ct);
+        File.Move(stateTmpPath, statePath, overwrite: true);
 
         return result;
     }
