@@ -1,0 +1,183 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 820" font-family="Segoe UI, Arial, sans-serif" font-size="12">
+  <title>Farmer Data Flow — Inbox to Immutable Run Directory</title>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#555"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#ea580c"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1100" height="820" fill="#fafafa" rx="8"/>
+
+  <!-- Title -->
+  <text x="550" y="30" text-anchor="middle" font-size="18" font-weight="bold" fill="#1e293b">Farmer Data Flow</text>
+  <text x="550" y="48" text-anchor="middle" font-size="11" fill="#64748b">Inbox trigger to immutable run directory with retrospective</text>
+
+  <!-- Legend -->
+  <rect x="30" y="60" width="12" height="12" fill="#dbeafe" stroke="#2563eb" rx="2"/>
+  <text x="48" y="71" fill="#1e293b" font-size="10">Host (.NET process)</text>
+  <rect x="170" y="60" width="12" height="12" fill="#fed7aa" stroke="#ea580c" rx="2"/>
+  <text x="188" y="71" fill="#1e293b" font-size="10">VM (Ubuntu / Claude CLI)</text>
+  <rect x="340" y="60" width="12" height="12" fill="#d1fae5" stroke="#059669" rx="2"/>
+  <text x="358" y="71" fill="#1e293b" font-size="10">File I/O (filesystem)</text>
+  <rect x="500" y="60" width="12" height="12" fill="#fde68a" stroke="#d97706" rx="2"/>
+  <text x="518" y="71" fill="#1e293b" font-size="10">LLM call</text>
+
+  <!-- ===== INBOX ===== -->
+  <rect x="40" y="90" width="180" height="45" fill="#d1fae5" stroke="#059669" rx="6"/>
+  <text x="130" y="110" text-anchor="middle" font-weight="bold" fill="#065f46">inbox/*.json</text>
+  <text x="130" y="124" text-anchor="middle" font-size="10" fill="#065f46">{work_request_name, source}</text>
+
+  <!-- Arrow: inbox → InboxWatcher -->
+  <line x1="130" y1="135" x2="130" y2="160" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== INBOX WATCHER ===== -->
+  <rect x="40" y="162" width="180" height="40" fill="#dbeafe" stroke="#2563eb" rx="6"/>
+  <text x="130" y="186" text-anchor="middle" font-weight="bold" fill="#1e40af">InboxWatcher</text>
+  <text x="235" y="186" font-size="9" fill="#64748b">polls every 2s</text>
+
+  <!-- Arrow: InboxWatcher → RunDirectoryFactory -->
+  <line x1="130" y1="202" x2="130" y2="225" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== RUN DIRECTORY FACTORY ===== -->
+  <rect x="40" y="227" width="180" height="40" fill="#dbeafe" stroke="#2563eb" rx="6"/>
+  <text x="130" y="244" text-anchor="middle" font-weight="bold" fill="#1e40af">RunDirectoryFactory</text>
+  <text x="130" y="258" text-anchor="middle" font-size="9" fill="#64748b">generates run_id, stamps request.json</text>
+
+  <!-- Arrow: Factory → run dir creation -->
+  <line x1="220" y1="247" x2="330" y2="247" stroke="#059669" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  <rect x="332" y="232" width="150" height="30" fill="#d1fae5" stroke="#059669" rx="4"/>
+  <text x="407" y="251" text-anchor="middle" font-size="10" fill="#065f46">runs/{run_id}/request.json</text>
+
+  <!-- Arrow: Factory → pipeline -->
+  <line x1="130" y1="267" x2="130" y2="295" stroke="#555" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== 7-STAGE PIPELINE ===== -->
+  <rect x="20" y="297" width="720" height="210" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6,3" rx="8"/>
+  <text x="380" y="315" text-anchor="middle" font-size="13" font-weight="bold" fill="#1e40af">RunWorkflow — 7-Stage Pipeline</text>
+  <text x="380" y="330" text-anchor="middle" font-size="9" fill="#64748b">Each stage wrapped by: TelemetryMiddleware > LoggingMiddleware > EventingMiddleware > CostTracking > Heartbeat</text>
+
+  <!-- Stage boxes -->
+  <rect x="35" y="340" width="88" height="35" fill="#dbeafe" stroke="#2563eb" rx="4"/>
+  <text x="79" y="361" text-anchor="middle" font-size="10" font-weight="bold" fill="#1e40af">CreateRun</text>
+
+  <line x1="123" y1="357" x2="138" y2="357" stroke="#2563eb" stroke-width="1" marker-end="url(#arrow-blue)"/>
+
+  <rect x="140" y="340" width="88" height="35" fill="#dbeafe" stroke="#2563eb" rx="4"/>
+  <text x="184" y="361" text-anchor="middle" font-size="10" font-weight="bold" fill="#1e40af">LoadPrompts</text>
+
+  <line x1="228" y1="357" x2="243" y2="357" stroke="#2563eb" stroke-width="1" marker-end="url(#arrow-blue)"/>
+
+  <rect x="245" y="340" width="88" height="35" fill="#dbeafe" stroke="#2563eb" rx="4"/>
+  <text x="289" y="361" text-anchor="middle" font-size="10" font-weight="bold" fill="#1e40af">ReserveVm</text>
+
+  <line x1="333" y1="357" x2="348" y2="357" stroke="#2563eb" stroke-width="1" marker-end="url(#arrow-blue)"/>
+
+  <rect x="350" y="340" width="68" height="35" fill="#dbeafe" stroke="#2563eb" rx="4"/>
+  <text x="384" y="361" text-anchor="middle" font-size="10" font-weight="bold" fill="#1e40af">Deliver</text>
+  <text x="384" y="385" text-anchor="middle" font-size="8" fill="#64748b">SCP prompts</text>
+
+  <line x1="418" y1="357" x2="433" y2="357" stroke="#2563eb" stroke-width="1" marker-end="url(#arrow-blue)"/>
+
+  <rect x="435" y="340" width="68" height="35" fill="#fde68a" stroke="#d97706" rx="4"/>
+  <text x="469" y="361" text-anchor="middle" font-size="10" font-weight="bold" fill="#92400e">Dispatch</text>
+  <text x="469" y="385" text-anchor="middle" font-size="8" fill="#92400e">SSH → worker.sh</text>
+
+  <line x1="503" y1="357" x2="518" y2="357" stroke="#2563eb" stroke-width="1" marker-end="url(#arrow-blue)"/>
+
+  <rect x="520" y="340" width="68" height="35" fill="#dbeafe" stroke="#2563eb" rx="4"/>
+  <text x="554" y="361" text-anchor="middle" font-size="10" font-weight="bold" fill="#1e40af">Collect</text>
+  <text x="554" y="385" text-anchor="middle" font-size="8" fill="#64748b">mapped drive</text>
+
+  <line x1="588" y1="357" x2="610" y2="357" stroke="#2563eb" stroke-width="1" marker-end="url(#arrow-blue)"/>
+
+  <rect x="612" y="340" width="115" height="35" fill="#fde68a" stroke="#d97706" rx="4"/>
+  <text x="669" y="356" text-anchor="middle" font-size="10" font-weight="bold" fill="#92400e">Retrospective</text>
+  <text x="669" y="368" text-anchor="middle" font-size="8" fill="#92400e">OpenAI gpt-4o-mini</text>
+
+  <!-- VM boundary box -->
+  <rect x="760" y="297" width="320" height="210" fill="#fed7aa" stroke="#ea580c" stroke-width="1.5" rx="8"/>
+  <text x="920" y="315" text-anchor="middle" font-size="13" font-weight="bold" fill="#9a3412">VM (claudefarm2)</text>
+  <text x="920" y="328" text-anchor="middle" font-size="9" fill="#9a3412">~/projects/ on Ubuntu</text>
+
+  <!-- VM contents -->
+  <rect x="775" y="338" width="140" height="28" fill="#fff7ed" stroke="#ea580c" rx="3"/>
+  <text x="845" y="356" text-anchor="middle" font-size="10" fill="#9a3412">worker.sh + Claude CLI</text>
+
+  <rect x="775" y="372" width="140" height="22" fill="#fff7ed" stroke="#ea580c" rx="3"/>
+  <text x="845" y="387" text-anchor="middle" font-size="9" fill="#9a3412">plans/*.md (from SCP)</text>
+
+  <rect x="775" y="400" width="140" height="22" fill="#fff7ed" stroke="#ea580c" rx="3"/>
+  <text x="845" y="415" text-anchor="middle" font-size="9" fill="#9a3412">output/manifest.json</text>
+
+  <rect x="775" y="428" width="140" height="22" fill="#fff7ed" stroke="#ea580c" rx="3"/>
+  <text x="845" y="443" text-anchor="middle" font-size="9" fill="#9a3412">output/summary.json</text>
+
+  <rect x="775" y="456" width="140" height="22" fill="#fff7ed" stroke="#ea580c" rx="3"/>
+  <text x="845" y="471" text-anchor="middle" font-size="9" fill="#9a3412">output/worker-retro.md</text>
+
+  <rect x="775" y="484" width="140" height="16" fill="#fff7ed" stroke="#ea580c" rx="3"/>
+  <text x="845" y="495" text-anchor="middle" font-size="8" fill="#9a3412">.comms/worker-progress.md</text>
+
+  <!-- SSH/SCP arrows (host → VM) -->
+  <line x1="418" y1="350" x2="770" y2="350" stroke="#ea580c" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow-orange)"/>
+  <text x="590" y="345" font-size="8" fill="#ea580c">SSH/SCP</text>
+
+  <!-- Mapped drive arrow (VM → host) -->
+  <line x1="770" y1="415" x2="588" y2="365" stroke="#059669" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="660" y="398" font-size="8" fill="#059669">SSHFS mapped drive (O:\)</text>
+
+  <!-- ===== EVENTING MIDDLEWARE OUTPUT ===== -->
+  <text x="380" y="425" text-anchor="middle" font-size="9" fill="#64748b">EventingMiddleware writes after each stage:</text>
+  <rect x="280" y="432" width="100" height="20" fill="#d1fae5" stroke="#059669" rx="3"/>
+  <text x="330" y="446" text-anchor="middle" font-size="9" fill="#065f46">events.jsonl</text>
+  <rect x="390" y="432" width="90" height="20" fill="#d1fae5" stroke="#059669" rx="3"/>
+  <text x="435" y="446" text-anchor="middle" font-size="9" fill="#065f46">state.json</text>
+
+  <!-- ===== FINAL RUN DIRECTORY ===== -->
+  <rect x="40" y="530" width="700" height="270" fill="#d1fae5" stroke="#059669" stroke-width="2" rx="8"/>
+  <text x="390" y="552" text-anchor="middle" font-size="14" font-weight="bold" fill="#065f46">Immutable Run Directory — runs/{run_id}/</text>
+  <text x="390" y="568" text-anchor="middle" font-size="10" fill="#065f46">Complete after RetrospectiveStage. Never modified after completion.</text>
+
+  <!-- Run dir files in 3 columns -->
+  <!-- Column 1: Pipeline artifacts -->
+  <text x="70" y="592" font-size="10" font-weight="bold" fill="#065f46">Pipeline artifacts</text>
+  <text x="70" y="608" font-size="10" fill="#065f46">request.json</text>
+  <text x="70" y="623" font-size="10" fill="#065f46">task-packet.json</text>
+  <text x="70" y="638" font-size="10" fill="#065f46">state.json</text>
+  <text x="70" y="653" font-size="10" fill="#065f46">events.jsonl</text>
+  <text x="70" y="668" font-size="10" fill="#065f46">result.json</text>
+  <text x="70" y="683" font-size="10" fill="#065f46">cost-report.json</text>
+
+  <!-- Column 2: QA artifacts -->
+  <text x="290" y="592" font-size="10" font-weight="bold" fill="#065f46">Retrospective artifacts</text>
+  <text x="290" y="608" font-size="10" fill="#065f46">review.json</text>
+  <text x="290" y="623" font-size="10" fill="#065f46">qa-retro.md</text>
+  <text x="290" y="638" font-size="10" fill="#065f46">directive-suggestions.md</text>
+
+  <!-- Column 3: Worker artifacts -->
+  <text x="510" y="592" font-size="10" font-weight="bold" fill="#065f46">Worker artifacts</text>
+  <text x="510" y="608" font-size="10" fill="#065f46">worker-retro.md</text>
+  <text x="510" y="623" font-size="10" fill="#065f46">artifacts/ (copied from VM)</text>
+  <text x="510" y="638" font-size="10" fill="#065f46">logs/</text>
+
+  <!-- OTLP arrow to Aspire -->
+  <rect x="800" y="550" width="260" height="80" fill="#e0e7ff" stroke="#4f46e5" stroke-width="1.5" rx="8"/>
+  <text x="930" y="572" text-anchor="middle" font-size="12" font-weight="bold" fill="#3730a3">Aspire Dashboard</text>
+  <text x="930" y="588" text-anchor="middle" font-size="10" fill="#3730a3">http://localhost:18888</text>
+  <text x="930" y="604" text-anchor="middle" font-size="9" fill="#3730a3">Traces + Logs + Metrics</text>
+  <text x="930" y="618" text-anchor="middle" font-size="9" fill="#3730a3">OTLP gRPC on :18889</text>
+
+  <!-- OTLP arrows from pipeline -->
+  <line x1="740" y1="360" x2="800" y2="570" stroke="#4f46e5" stroke-width="1" stroke-dasharray="3,3"/>
+  <text x="780" y="520" font-size="8" fill="#4f46e5" transform="rotate(-60 780 520)">OTLP gRPC</text>
+
+  <!-- Footer -->
+  <text x="550" y="810" text-anchor="middle" font-size="9" fill="#94a3b8">Farmer Phase 6 — github.com/djcdevelopment/planning</text>
+</svg>

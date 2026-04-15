@@ -132,6 +132,15 @@ Phase work lives on feature branches; nothing has been merged to `main` yet beyo
 
 Merging any of these to `main` is deferred until Phase 6 ships end-to-end.
 
+## Architecture Diagrams
+
+Visual overviews of the system (SVG, open in any browser):
+
+- **[Data Flow](./docs/diagrams/data-flow.svg)** — inbox trigger through 7-stage pipeline to immutable run directory, with VM boundary and transport layer
+- **[Learning Loop](./docs/diagrams/learning-loop.svg)** — the two LLM call sites (Claude CLI on VM, OpenAI on host), what each sees, what each produces, and how directive suggestions feed forward to future runs
+- **[Tech Stack](./docs/diagrams/tech-stack.svg)** — layered architecture from Aspire Dashboard through .NET host through transport to VM worker, with scaling path notes
+- **[Artifact Map](./docs/diagrams/artifact-map.svg)** — every file in a completed run directory, who writes it, and who reads it
+
 ## Documentation
 
 - **[docs/phase5-build-log.md](./docs/phase5-build-log.md)** — Literal record of every Phase 5 commit, including the retro on Bug 1 / Bug 2

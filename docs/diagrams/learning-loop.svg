@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 650" font-family="Segoe UI, Arial, sans-serif" font-size="12">
+  <title>Farmer Learning Loop — LLM Call Sites and Forward-Looking Learning</title>
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#555"/>
+    </marker>
+    <marker id="arr-purple" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arr-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#059669"/>
+    </marker>
+  </defs>
+
+  <rect width="1000" height="650" fill="#fafafa" rx="8"/>
+
+  <!-- Title -->
+  <text x="500" y="30" text-anchor="middle" font-size="18" font-weight="bold" fill="#1e293b">Learning Loop — Where LLM Calls Happen</text>
+  <text x="500" y="48" text-anchor="middle" font-size="11" fill="#64748b">Two providers, two purposes, one forward-looking learning path</text>
+
+  <!-- ===== RUN N (current) ===== -->
+  <rect x="30" y="70" width="940" height="400" fill="none" stroke="#94a3b8" stroke-width="1" stroke-dasharray="6,3" rx="10"/>
+  <text x="50" y="90" font-size="13" font-weight="bold" fill="#475569">Run N (current)</text>
+
+  <!-- LLM CALL SITE 1: VM Worker -->
+  <rect x="50" y="110" width="400" height="250" fill="#fff7ed" stroke="#ea580c" stroke-width="2" rx="8"/>
+  <text x="250" y="133" text-anchor="middle" font-size="14" font-weight="bold" fill="#9a3412">LLM Call Site 1: VM Worker</text>
+
+  <rect x="70" y="145" width="160" height="25" fill="#fde68a" stroke="#d97706" rx="4"/>
+  <text x="150" y="162" text-anchor="middle" font-size="11" font-weight="bold" fill="#92400e">Claude CLI 2.1.x</text>
+
+  <text x="250" y="162" font-size="10" fill="#9a3412">--dangerously-skip-permissions</text>
+
+  <!-- What Claude sees -->
+  <rect x="70" y="180" width="360" height="80" fill="#fff" stroke="#ea580c" rx="4" opacity="0.8"/>
+  <text x="80" y="196" font-size="10" font-weight="bold" fill="#9a3412">Claude's context window:</text>
+  <text x="90" y="212" font-size="9" fill="#78350f">1. CLAUDE.md (worker instructions)</text>
+  <text x="90" y="225" font-size="9" fill="#78350f">2. Current prompt file (e.g. 1-DefineSchema.md)</text>
+  <text x="90" y="238" font-size="9" fill="#78350f">3. Prior prompts' file changes (on disk)</text>
+  <text x="90" y="251" font-size="9" fill="#78350f">4. Feedback from QA (if retry, prepended to prompt 1)</text>
+
+  <!-- What Claude produces -->
+  <rect x="70" y="270" width="360" height="75" fill="#fff" stroke="#059669" rx="4" opacity="0.8"/>
+  <text x="80" y="286" font-size="10" font-weight="bold" fill="#065f46">Outputs:</text>
+  <text x="90" y="302" font-size="9" fill="#065f46">Code changes (files created/modified on VM)</text>
+  <text x="90" y="315" font-size="9" fill="#065f46">manifest.json (what changed)</text>
+  <text x="90" y="328" font-size="9" fill="#065f46">summary.json + worker-retro.md (self-review)</text>
+  <text x="90" y="341" font-size="9" fill="#065f46">Per-prompt stdout (execution log)</text>
+
+  <!-- OTel span label -->
+  <rect x="70" y="355" width="220" height="14" fill="#e0e7ff" rx="2"/>
+  <text x="80" y="365" font-size="8" fill="#3730a3">OTel: workflow.stage.Dispatch (~5 min per run)</text>
+
+  <!-- Arrow: VM → Host -->
+  <line x1="450" y1="300" x2="500" y2="300" stroke="#059669" stroke-width="2" marker-end="url(#arr-green)"/>
+  <text x="465" y="290" font-size="8" fill="#059669" transform="rotate(-90 465 290)">SSHFS</text>
+
+  <!-- LLM CALL SITE 2: Host Retrospective -->
+  <rect x="510" y="110" width="440" height="250" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2" rx="8"/>
+  <text x="730" y="133" text-anchor="middle" font-size="14" font-weight="bold" fill="#5b21b6">LLM Call Site 2: Host Retrospective</text>
+
+  <rect x="530" y="145" width="200" height="25" fill="#fde68a" stroke="#d97706" rx="4"/>
+  <text x="630" y="162" text-anchor="middle" font-size="11" font-weight="bold" fill="#92400e">OpenAI gpt-4o-mini via MAF</text>
+
+  <text x="740" y="162" font-size="10" fill="#5b21b6">Microsoft.Agents.AI 1.1.0</text>
+
+  <!-- What the agent sees -->
+  <rect x="530" y="180" width="400" height="80" fill="#fff" stroke="#7c3aed" rx="4" opacity="0.8"/>
+  <text x="540" y="196" font-size="10" font-weight="bold" fill="#5b21b6">Agent's context window:</text>
+  <text x="550" y="212" font-size="9" fill="#4c1d95">1. System prompt (retrospective instructions + JSON schema)</text>
+  <text x="550" y="225" font-size="9" fill="#4c1d95">2. manifest.json (what the worker produced)</text>
+  <text x="550" y="238" font-size="9" fill="#4c1d95">3. summary.json + worker-retro.md (worker's self-review)</text>
+  <text x="550" y="251" font-size="9" fill="#4c1d95">4. execution-log.txt tail + sampled output files</text>
+
+  <!-- What the agent produces -->
+  <rect x="530" y="270" width="400" height="75" fill="#fff" stroke="#059669" rx="4" opacity="0.8"/>
+  <text x="540" y="286" font-size="10" font-weight="bold" fill="#065f46">Outputs (typed via RunAsync&lt;T&gt;):</text>
+  <text x="550" y="302" font-size="9" fill="#065f46">review.json — verdict (Accept/Retry/Reject) + risk_score</text>
+  <text x="550" y="315" font-size="9" fill="#065f46">qa-retro.md — human-readable analysis</text>
+  <text x="550" y="328" font-size="9" fill="#065f46">directive-suggestions.md — what to change next time</text>
+  <text x="550" y="341" font-size="9" fill="#065f46">  scoped to: prompts | claude_md | task_packet</text>
+
+  <!-- OTel span labels -->
+  <rect x="530" y="355" width="340" height="14" fill="#e0e7ff" rx="2"/>
+  <text x="540" y="365" font-size="8" fill="#3730a3">OTel: workflow.stage.Retrospective > agent.review.FarmerRetrospectiveAgent > chat gpt-4o-mini (~10s)</text>
+
+  <!-- ===== LEARNING PATH ===== -->
+  <rect x="30" y="485" width="940" height="140" fill="#ecfdf5" stroke="#059669" stroke-width="2" rx="10"/>
+  <text x="500" y="508" text-anchor="middle" font-size="14" font-weight="bold" fill="#065f46">Forward-Looking Learning Path</text>
+  <text x="500" y="522" text-anchor="middle" font-size="10" fill="#065f46">Phase 6: manual application. Phase 7+: automated.</text>
+
+  <!-- Learning flow -->
+  <rect x="60" y="537" width="180" height="35" fill="#d1fae5" stroke="#059669" rx="5"/>
+  <text x="150" y="559" text-anchor="middle" font-size="10" fill="#065f46">directive-suggestions.md</text>
+
+  <line x1="240" y1="554" x2="290" y2="554" stroke="#059669" stroke-width="2" marker-end="url(#arr-green)"/>
+
+  <rect x="295" y="537" width="140" height="35" fill="#fef3c7" stroke="#d97706" rx="5"/>
+  <text x="365" y="552" text-anchor="middle" font-size="10" font-weight="bold" fill="#92400e">Human Review</text>
+  <text x="365" y="564" text-anchor="middle" font-size="8" fill="#92400e">(Phase 6: manual)</text>
+
+  <line x1="435" y1="554" x2="485" y2="554" stroke="#059669" stroke-width="2" marker-end="url(#arr-green)"/>
+
+  <rect x="490" y="530" width="180" height="50" fill="#dbeafe" stroke="#2563eb" rx="5"/>
+  <text x="580" y="550" text-anchor="middle" font-size="10" font-weight="bold" fill="#1e40af">Updated for Run N+1:</text>
+  <text x="580" y="565" text-anchor="middle" font-size="9" fill="#1e40af">prompts/*.md or CLAUDE.md</text>
+  <text x="580" y="577" text-anchor="middle" font-size="9" fill="#1e40af">or task-packet.json.feedback</text>
+
+  <line x1="670" y1="554" x2="720" y2="554" stroke="#7c3aed" stroke-width="2" marker-end="url(#arr-purple)"/>
+
+  <rect x="725" y="537" width="230" height="35" fill="#f5f3ff" stroke="#7c3aed" rx="5"/>
+  <text x="840" y="552" text-anchor="middle" font-size="10" font-weight="bold" fill="#5b21b6">Run N+1</text>
+  <text x="840" y="564" text-anchor="middle" font-size="9" fill="#5b21b6">Better prompts → better output → better retros</text>
+
+  <!-- Feedback loop arrow back -->
+  <path d="M 840 572 L 840 610 L 150 610 L 150 572" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#arr-purple)"/>
+  <text x="500" y="605" text-anchor="middle" font-size="9" fill="#7c3aed">Accumulated learning feeds back into future runs</text>
+
+  <!-- Footer -->
+  <text x="500" y="642" text-anchor="middle" font-size="9" fill="#94a3b8">Farmer Phase 6 — Two LLM providers, one learning loop</text>
+</svg>

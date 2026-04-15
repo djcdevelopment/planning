@@ -1,0 +1,155 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 680" font-family="Segoe UI, Arial, sans-serif" font-size="12">
+  <title>Farmer Artifact Map — Who Creates and Reads Each File</title>
+  <defs>
+    <marker id="aw" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+      <path d="M0,0 L7,2.5 L0,5 Z" fill="#2563eb"/>
+    </marker>
+    <marker id="ar" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+      <path d="M0,0 L7,2.5 L0,5 Z" fill="#dc2626"/>
+    </marker>
+  </defs>
+
+  <rect width="1050" height="680" fill="#f8fafc" rx="8"/>
+
+  <text x="525" y="28" text-anchor="middle" font-size="18" font-weight="bold" fill="#1e293b">Artifact Map — runs/{run_id}/</text>
+  <text x="525" y="46" text-anchor="middle" font-size="11" fill="#64748b">Every file in a completed run directory: who writes it (blue) and who reads it (red)</text>
+
+  <!-- Legend -->
+  <line x1="50" y1="62" x2="90" y2="62" stroke="#2563eb" stroke-width="2" marker-end="url(#aw)"/>
+  <text x="95" y="66" font-size="10" fill="#1e293b">writes</text>
+  <line x1="170" y1="62" x2="210" y2="62" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="4,2" marker-end="url(#ar)"/>
+  <text x="215" y="66" font-size="10" fill="#1e293b">reads</text>
+  <rect x="310" y="56" width="10" height="10" fill="#dbeafe" stroke="#2563eb" rx="2"/>
+  <text x="325" y="66" font-size="10" fill="#1e293b">Host component</text>
+  <rect x="450" y="56" width="10" height="10" fill="#fed7aa" stroke="#ea580c" rx="2"/>
+  <text x="465" y="66" font-size="10" fill="#1e293b">VM component</text>
+  <rect x="580" y="56" width="10" height="10" fill="#f5f3ff" stroke="#7c3aed" rx="2"/>
+  <text x="595" y="66" font-size="10" fill="#1e293b">MAF agent</text>
+
+  <!-- ===== FILES COLUMN (left) ===== -->
+  <rect x="30" y="85" width="250" height="570" fill="#f1f5f9" stroke="#cbd5e1" rx="6"/>
+  <text x="155" y="105" text-anchor="middle" font-size="13" font-weight="bold" fill="#334155">Run Directory Files</text>
+
+  <!-- File entries -->
+  <rect x="45" y="118" width="220" height="22" fill="#fff" stroke="#94a3b8" rx="3" id="f-request"/>
+  <text x="55" y="133" font-size="10" fill="#334155" font-weight="bold">request.json</text>
+
+  <rect x="45" y="148" width="220" height="22" fill="#fff" stroke="#94a3b8" rx="3" id="f-taskpacket"/>
+  <text x="55" y="163" font-size="10" fill="#334155" font-weight="bold">task-packet.json</text>
+
+  <rect x="45" y="178" width="220" height="22" fill="#fff" stroke="#94a3b8" rx="3" id="f-state"/>
+  <text x="55" y="193" font-size="10" fill="#334155" font-weight="bold">state.json</text>
+
+  <rect x="45" y="208" width="220" height="22" fill="#fff" stroke="#94a3b8" rx="3" id="f-events"/>
+  <text x="55" y="223" font-size="10" fill="#334155" font-weight="bold">events.jsonl</text>
+
+  <rect x="45" y="238" width="220" height="22" fill="#fff" stroke="#94a3b8" rx="3" id="f-result"/>
+  <text x="55" y="253" font-size="10" fill="#334155" font-weight="bold">result.json</text>
+
+  <rect x="45" y="268" width="220" height="22" fill="#fff" stroke="#94a3b8" rx="3" id="f-costreport"/>
+  <text x="55" y="283" font-size="10" fill="#334155" font-weight="bold">cost-report.json</text>
+
+  <rect x="45" y="310" width="220" height="22" fill="#f5f3ff" stroke="#7c3aed" rx="3" id="f-review"/>
+  <text x="55" y="325" font-size="10" fill="#5b21b6" font-weight="bold">review.json</text>
+
+  <rect x="45" y="340" width="220" height="22" fill="#f5f3ff" stroke="#7c3aed" rx="3" id="f-qaretro"/>
+  <text x="55" y="355" font-size="10" fill="#5b21b6" font-weight="bold">qa-retro.md</text>
+
+  <rect x="45" y="370" width="220" height="22" fill="#f5f3ff" stroke="#7c3aed" rx="3" id="f-directives"/>
+  <text x="55" y="385" font-size="10" fill="#5b21b6" font-weight="bold">directive-suggestions.md</text>
+
+  <rect x="45" y="420" width="220" height="22" fill="#fff7ed" stroke="#ea580c" rx="3" id="f-manifest"/>
+  <text x="55" y="435" font-size="10" fill="#9a3412" font-weight="bold">manifest.json</text>
+  <text x="200" y="435" font-size="8" fill="#9a3412">(on VM, read via O:\)</text>
+
+  <rect x="45" y="450" width="220" height="22" fill="#fff7ed" stroke="#ea580c" rx="3" id="f-summary"/>
+  <text x="55" y="465" font-size="10" fill="#9a3412" font-weight="bold">summary.json</text>
+  <text x="200" y="465" font-size="8" fill="#9a3412">(on VM)</text>
+
+  <rect x="45" y="480" width="220" height="22" fill="#fff7ed" stroke="#ea580c" rx="3" id="f-workerretro"/>
+  <text x="55" y="495" font-size="10" fill="#9a3412" font-weight="bold">worker-retro.md</text>
+  <text x="200" y="495" font-size="8" fill="#9a3412">(on VM)</text>
+
+  <rect x="45" y="520" width="220" height="22" fill="#fff" stroke="#94a3b8" rx="3" id="f-logs"/>
+  <text x="55" y="535" font-size="10" fill="#334155" font-weight="bold">logs/</text>
+
+  <rect x="45" y="550" width="220" height="22" fill="#fff" stroke="#94a3b8" rx="3" id="f-artifacts"/>
+  <text x="55" y="565" font-size="10" fill="#334155" font-weight="bold">artifacts/</text>
+
+  <!-- ===== CREATORS/READERS COLUMN (right) ===== -->
+  <rect x="340" y="85" width="670" height="570" fill="none" stroke="none"/>
+
+  <!-- Creator boxes -->
+  <rect x="380" y="113" width="160" height="28" fill="#dbeafe" stroke="#2563eb" rx="4"/>
+  <text x="460" y="131" text-anchor="middle" font-size="10" fill="#1e40af">RunDirectoryFactory</text>
+  <line x1="265" y1="129" x2="378" y2="129" stroke="#2563eb" stroke-width="1.5" marker-end="url(#aw)"/>
+
+  <rect x="380" y="143" width="160" height="28" fill="#dbeafe" stroke="#2563eb" rx="4"/>
+  <text x="460" y="161" text-anchor="middle" font-size="10" fill="#1e40af">LoadPromptsStage</text>
+  <line x1="265" y1="159" x2="378" y2="159" stroke="#2563eb" stroke-width="1.5" marker-end="url(#aw)"/>
+
+  <rect x="380" y="173" width="220" height="28" fill="#dbeafe" stroke="#2563eb" rx="4"/>
+  <text x="490" y="191" text-anchor="middle" font-size="10" fill="#1e40af">EventingMiddleware + final write</text>
+  <line x1="265" y1="189" x2="378" y2="189" stroke="#2563eb" stroke-width="1.5" marker-end="url(#aw)"/>
+
+  <rect x="380" y="203" width="160" height="28" fill="#dbeafe" stroke="#2563eb" rx="4"/>
+  <text x="460" y="221" text-anchor="middle" font-size="10" fill="#1e40af">EventingMiddleware</text>
+  <line x1="265" y1="219" x2="378" y2="219" stroke="#2563eb" stroke-width="1.5" marker-end="url(#aw)"/>
+
+  <rect x="380" y="233" width="220" height="28" fill="#dbeafe" stroke="#2563eb" rx="4"/>
+  <text x="490" y="251" text-anchor="middle" font-size="10" fill="#1e40af">ExecuteFromDirectoryAsync</text>
+  <line x1="265" y1="249" x2="378" y2="249" stroke="#2563eb" stroke-width="1.5" marker-end="url(#aw)"/>
+
+  <rect x="380" y="263" width="220" height="28" fill="#dbeafe" stroke="#2563eb" rx="4"/>
+  <text x="490" y="281" text-anchor="middle" font-size="10" fill="#1e40af">InboxWatcher (CostTracker)</text>
+  <line x1="265" y1="279" x2="378" y2="279" stroke="#2563eb" stroke-width="1.5" marker-end="url(#aw)"/>
+
+  <!-- QA artifacts -->
+  <rect x="380" y="305" width="200" height="28" fill="#f5f3ff" stroke="#7c3aed" rx="4"/>
+  <text x="480" y="323" text-anchor="middle" font-size="10" fill="#5b21b6">RetrospectiveStage</text>
+  <line x1="265" y1="321" x2="378" y2="321" stroke="#2563eb" stroke-width="1.5" marker-end="url(#aw)"/>
+
+  <rect x="380" y="335" width="200" height="28" fill="#f5f3ff" stroke="#7c3aed" rx="4"/>
+  <text x="480" y="353" text-anchor="middle" font-size="10" fill="#5b21b6">MafRetrospectiveAgent</text>
+  <line x1="265" y1="351" x2="378" y2="351" stroke="#2563eb" stroke-width="1.5" marker-end="url(#aw)"/>
+  <line x1="265" y1="381" x2="378" y2="365" stroke="#2563eb" stroke-width="1.5" marker-end="url(#aw)"/>
+
+  <!-- VM artifacts - writers -->
+  <rect x="380" y="415" width="160" height="28" fill="#fed7aa" stroke="#ea580c" rx="4"/>
+  <text x="460" y="433" text-anchor="middle" font-size="10" fill="#9a3412">worker.sh (VM)</text>
+  <line x1="265" y1="431" x2="378" y2="431" stroke="#2563eb" stroke-width="1.5" marker-end="url(#aw)"/>
+  <line x1="265" y1="461" x2="378" y2="437" stroke="#2563eb" stroke-width="1.5" marker-end="url(#aw)"/>
+  <line x1="265" y1="491" x2="378" y2="443" stroke="#2563eb" stroke-width="1.5" marker-end="url(#aw)"/>
+
+  <!-- READ arrows (who reads what) -->
+  <!-- CollectStage reads manifest + summary -->
+  <rect x="650" y="415" width="140" height="28" fill="#dbeafe" stroke="#2563eb" rx="4"/>
+  <text x="720" y="433" text-anchor="middle" font-size="10" fill="#1e40af">CollectStage</text>
+  <text x="720" y="445" text-anchor="middle" font-size="8" fill="#64748b">reads via mapped drive</text>
+  <line x1="540" y1="431" x2="648" y2="431" stroke="#dc2626" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#ar)"/>
+
+  <!-- RetrospectiveStage reads manifest + summary + worker-retro -->
+  <rect x="650" y="335" width="180" height="28" fill="#f5f3ff" stroke="#7c3aed" rx="4"/>
+  <text x="740" y="353" text-anchor="middle" font-size="10" fill="#5b21b6">RetrospectiveStage reads</text>
+  <line x1="540" y1="431" x2="648" y2="353" stroke="#dc2626" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#ar)"/>
+
+  <!-- Human reads qa-retro + directives -->
+  <rect x="650" y="370" width="160" height="28" fill="#fef3c7" stroke="#d97706" rx="4"/>
+  <text x="730" y="388" text-anchor="middle" font-size="10" fill="#92400e">Human / Phase 7+ tool</text>
+  <line x1="265" y1="381" x2="270" y2="381" stroke="none"/>
+  <!-- Arrows from qa-retro and directives to Human -->
+  <line x1="265" y1="351" x2="270" y2="351" stroke="none"/>
+
+  <!-- Aspire reads events + state -->
+  <rect x="650" y="203" width="160" height="28" fill="#e0e7ff" stroke="#4f46e5" rx="4"/>
+  <text x="730" y="221" text-anchor="middle" font-size="10" fill="#3730a3">Aspire Dashboard</text>
+  <text x="730" y="233" text-anchor="middle" font-size="8" fill="#4f46e5">via OTLP (real-time)</text>
+
+  <!-- Section labels -->
+  <text x="45" y="308" font-size="8" font-weight="bold" fill="#7c3aed">QA artifacts (Phase 6)</text>
+  <text x="45" y="418" font-size="8" font-weight="bold" fill="#9a3412">Worker artifacts (on VM)</text>
+  <text x="45" y="518" font-size="8" font-weight="bold" fill="#64748b">Directories</text>
+
+  <!-- Footer -->
+  <text x="525" y="670" text-anchor="middle" font-size="9" fill="#94a3b8">Farmer Phase 6 — Every file in a run directory is immutable after completion</text>
+</svg>
