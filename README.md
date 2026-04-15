@@ -62,9 +62,9 @@ dotnet build
 dotnet test
 ```
 
-**Expected:** 107+ tests green across `Farmer.Tests` (the count grows each phase). Build targets `net8.0`.
+**Expected:** 110+ tests green across `Farmer.Tests` (the count grows each phase). Build targets `net8.0`.
 
-## Run the demo (Phase 5, verified)
+## Run the demo (Phase 6, verified)
 
 Full runbook lives at [scripts/demo/README.md](./scripts/demo/README.md). The short version:
 
