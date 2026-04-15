@@ -8,13 +8,13 @@ If you're an AI session (Claude Code, another agent, future-me) picking up this 
 
 ## Current phase state (as of last session)
 
-- **Phase 5** shipped: externalized runtime, file-first `InboxWatcher`, OTel in Aspire, 96 tests green, real end-to-end verified against `claudefarm2` with a fake worker. Two feature branches pushed (`claude/phase5-externalized-runtime` and `claude/phase5-end-to-end-verification`), neither merged to main yet.
+- **Phase 5** shipped: externalized runtime, file-first `InboxWatcher`, OTel in Aspire, real end-to-end verified against `claudefarm2` with a fake worker. Two feature branches pushed (`claude/phase5-externalized-runtime` and `claude/phase5-end-to-end-verification`), neither merged to main yet.
 - **Phase 6** shipped on `claude/phase6-retrospective-loop`:
   - Real `worker.sh` runs Claude CLI in full dangerous mode on VM
   - `RetrospectiveStage` calls real OpenAI `gpt-4o-mini` via MAF to review every run
   - Three new artifacts per run: `review.json` + `qa-retro.md` + `directive-suggestions.md`
   - First real end-to-end verified: Claude built a TypeScript API on claudefarm2, OpenAI accepted with risk_score=15
-  - 7 commits on the branch, 107 tests green
+  - 7 commits on the branch, 110 tests green
   - See [docs/phase6-retro-verification.md](./docs/phase6-retro-verification.md) for the first retrospective run
 
 Check `git log --oneline claude/phase5-end-to-end-verification..HEAD` on the active branch to see exactly what's committed.
@@ -70,7 +70,7 @@ Docker keeps the Aspire Dashboard container running across sessions. If you see 
 ```powershell
 cd D:\work\planning\src
 dotnet build                # expect clean
-dotnet test                 # expect 107+ green (varies per phase)
+dotnet test                 # expect 110+ green (varies per phase)
 
 cd Farmer.Host
 dotnet run                  # binds http://localhost:5100, starts InboxWatcher
