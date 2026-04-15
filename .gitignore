@@ -40,3 +40,7 @@ runs/
 
 ## Claude Code local state (settings, worktrees, sessions)
 .claude/
+
+## Jaeger binary is ~120MB (over GitHub's 100MB file limit).
+## tools/download-jaeger.ps1 fetches it; start-jaeger.ps1 calls that automatically.
+tools/jaeger.exe
