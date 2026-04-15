@@ -1,6 +1,7 @@
 using Farmer.Core.Config;
 using Farmer.Core.Contracts;
 using Farmer.Core.Middleware;
+using Farmer.Core.Models;
 using Farmer.Core.Workflow;
 using Farmer.Core.Workflow.Stages;
 using Farmer.Tools;
@@ -45,7 +46,11 @@ public class DiCompositionTests
         services.AddSingleton<DeliverStage>();
         services.AddSingleton<DispatchStage>();
         services.AddSingleton<CollectStage>();
-        services.AddSingleton<ReviewStage>();
+        services.AddSingleton<RetrospectiveStage>();
+
+        // Retrospective agent — fake for DI test
+        services.Configure<RetrospectiveSettings>(_ => { });
+        services.AddSingleton<IRetrospectiveAgent, NoOpRetrospectiveAgent>();
 
         // Stateless middleware — resolved by WorkflowPipelineFactory.
         // CostTrackingMiddleware is NOT registered: factory creates it per-run.
@@ -91,7 +96,7 @@ public class DiCompositionTests
         Assert.Equal("Deliver", stages[3].Name);
         Assert.Equal("Dispatch", stages[4].Name);
         Assert.Equal("Collect", stages[5].Name);
-        Assert.Equal("Review", stages[6].Name);
+        Assert.Equal("Retrospective", stages[6].Name);
     }
 
     [Fact]
@@ -137,5 +142,24 @@ public class DiCompositionTests
         var (workflow2, _) = factory.Create();
 
         Assert.NotSame(workflow1, workflow2);
+    }
+
+    /// <summary>No-op agent for DI composition tests. Never calls OpenAI.</summary>
+    private sealed class NoOpRetrospectiveAgent : IRetrospectiveAgent
+    {
+        public Task<RetrospectiveResult> AnalyzeAsync(
+            RetrospectiveContext context, CancellationToken ct = default)
+        {
+            return Task.FromResult(new RetrospectiveResult
+            {
+                Verdict = new ReviewVerdict
+                {
+                    RunId = context.RunId,
+                    Verdict = Verdict.Accept,
+                    RiskScore = 0,
+                },
+                QaRetroMarkdown = "No-op retrospective for DI composition test.",
+            });
+        }
     }
 }

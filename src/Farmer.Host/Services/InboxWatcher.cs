@@ -19,6 +19,7 @@ public sealed class InboxWatcher : BackgroundService
     private readonly RunDirectoryFactory _runDirFactory;
     private readonly WorkflowPipelineFactory _pipelineFactory;
     private readonly IRunStore _runStore;
+    private readonly IVmManager _vmManager;
     private readonly ILogger<InboxWatcher> _logger;
 
     public InboxWatcher(
@@ -26,12 +27,14 @@ public sealed class InboxWatcher : BackgroundService
         RunDirectoryFactory runDirFactory,
         WorkflowPipelineFactory pipelineFactory,
         IRunStore runStore,
+        IVmManager vmManager,
         ILogger<InboxWatcher> logger)
     {
         _settings = settings.Value;
         _runDirFactory = runDirFactory;
         _pipelineFactory = pipelineFactory;
         _runStore = runStore;
+        _vmManager = vmManager;
         _logger = logger;
     }
 
@@ -88,11 +91,19 @@ public sealed class InboxWatcher : BackgroundService
         var runId = Path.GetFileName(runDir);
         _logger.LogInformation("Starting workflow for run {RunId} from inbox file {File}", runId, fileName);
 
+        string? reservedVm = null;
         try
         {
             // Fresh workflow + cost tracker per run — no shared state across runs.
             var (workflow, costTracker) = _pipelineFactory.Create();
             var result = await workflow.ExecuteFromDirectoryAsync(runDir, ct);
+
+            // Track which VM was reserved so we can release it in finally
+            var stateJson = await File.ReadAllTextAsync(
+                Path.Combine(runDir, "state.json"), ct);
+            var vmId = System.Text.Json.JsonDocument.Parse(stateJson)
+                .RootElement.TryGetProperty("vm_id", out var v) ? v.GetString() : null;
+            reservedVm = vmId;
 
             var costReport = costTracker.GetReport(result.RunId);
             await _runStore.SaveCostReportAsync(costReport, ct);
@@ -103,6 +114,35 @@ public sealed class InboxWatcher : BackgroundService
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Workflow threw exception for run {RunId}", runId);
+
+            // Try to find the VM from state.json even on exception
+            try
+            {
+                var statePath = Path.Combine(runDir, "state.json");
+                if (File.Exists(statePath))
+                {
+                    var stateJson = await File.ReadAllTextAsync(statePath, ct);
+                    reservedVm = System.Text.Json.JsonDocument.Parse(stateJson)
+                        .RootElement.TryGetProperty("vm_id", out var v) ? v.GetString() : null;
+                }
+            }
+            catch { /* best effort */ }
+        }
+        finally
+        {
+            // Release the VM back to the pool so the next run can use it
+            if (!string.IsNullOrEmpty(reservedVm))
+            {
+                try
+                {
+                    await _vmManager.ReleaseAsync(reservedVm, ct);
+                    _logger.LogInformation("Released VM {VmName} after run {RunId}", reservedVm, runId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to release VM {VmName} after run {RunId}", reservedVm, runId);
+                }
+            }
         }
     }
 }

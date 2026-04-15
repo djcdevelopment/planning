@@ -4,6 +4,7 @@ using Farmer.Core.Middleware;
 using Farmer.Core.Telemetry;
 using Farmer.Core.Workflow;
 using Farmer.Core.Workflow.Stages;
+using Farmer.Agents;
 using Farmer.Host.Services;
 using Farmer.Tools;
 using OpenTelemetry.Metrics;
@@ -32,7 +33,7 @@ builder.Services.AddSingleton<ReserveVmStage>();
 builder.Services.AddSingleton<DeliverStage>();
 builder.Services.AddSingleton<DispatchStage>();
 builder.Services.AddSingleton<CollectStage>();
-builder.Services.AddSingleton<ReviewStage>();
+builder.Services.AddSingleton<RetrospectiveStage>();
 
 // --- Stateless middleware (resolved by WorkflowPipelineFactory) ---
 // CostTrackingMiddleware is NOT registered here — the factory creates a
@@ -41,6 +42,9 @@ builder.Services.AddSingleton<TelemetryMiddleware>();
 builder.Services.AddSingleton<LoggingMiddleware>();
 builder.Services.AddSingleton<EventingMiddleware>();
 builder.Services.AddSingleton<HeartbeatMiddleware>();
+
+// --- Retrospective agent (MAF + OpenAI, via Farmer.Agents) ---
+builder.Services.AddFarmerAgents(builder.Configuration);
 
 // --- Workflow factory ---
 // Builds (RunWorkflow, CostTrackingMiddleware) per call. RunWorkflow is no
@@ -60,7 +64,9 @@ builder.Services.AddOpenTelemetry()
     {
         tracing.SetResourceBuilder(otelResource);
         tracing.AddSource(FarmerActivitySource.Name);
+        tracing.AddSource("Experimental.Microsoft.Agents.AI"); // MAF agent spans
         tracing.AddAspNetCoreInstrumentation();
+        tracing.AddHttpClientInstrumentation(); // outbound OpenAI API calls
         if (telemetrySettings.EnableOtlpExporter)
             tracing.AddOtlpExporter(o => o.Endpoint = new Uri(telemetrySettings.OtlpEndpoint));
         if (telemetrySettings.EnableConsoleExporter)
@@ -70,6 +76,7 @@ builder.Services.AddOpenTelemetry()
     {
         metrics.SetResourceBuilder(otelResource);
         metrics.AddMeter(FarmerMetrics.MeterName);
+        metrics.AddMeter("Experimental.Microsoft.Agents.AI"); // MAF agent metrics
         if (telemetrySettings.EnableOtlpExporter)
             metrics.AddOtlpExporter(o => o.Endpoint = new Uri(telemetrySettings.OtlpEndpoint));
         if (telemetrySettings.EnableConsoleExporter)
@@ -85,7 +92,7 @@ app.MapGet("/", () => Results.Ok(new
 {
     service = "Farmer",
     version = "0.1.0",
-    phase = "Phase 5 - Externalized Runtime + OTel"
+    phase = "Phase 6 - Retrospective Loop"
 }));
 
 app.MapGet("/runs/{runId}", async (string runId, IRunStore store) =>
