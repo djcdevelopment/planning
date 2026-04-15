@@ -24,4 +24,13 @@ public sealed class RunRequest
 
     [JsonPropertyName("source")]
     public string Source { get; set; } = "api";
+
+    /// <summary>
+    /// Links this run to a prior attempt when the caller explicitly chains runs
+    /// (e.g. a human re-drops an inbox file after reading a qa-retro from run N,
+    /// wanting run N+1 to know what came before). Phase 6 only records the link;
+    /// future phases may use it to aggregate learning across a chain of runs.
+    /// </summary>
+    [JsonPropertyName("parent_run_id")]
+    public string? ParentRunId { get; set; }
 }
