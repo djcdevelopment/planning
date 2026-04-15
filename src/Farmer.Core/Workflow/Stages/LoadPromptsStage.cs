@@ -21,7 +21,7 @@ public sealed class LoadPromptsStage : IWorkflowStage
 
     public async Task<StageResult> ExecuteAsync(RunFlowState state, CancellationToken ct = default)
     {
-        var planDir = Path.Combine(_settings.SamplePlansPath, state.WorkRequestName);
+        var planDir = Path.Combine(_settings.Paths.SamplePlansPath, state.WorkRequestName);
 
         if (!Directory.Exists(planDir))
             return StageResult.Failed(Name, $"Work request directory not found: {planDir}");

@@ -56,28 +56,41 @@ public class RunDirectoryLayoutTests
     }
 
     [Fact]
-    public void RunStorePaths_IncludeRunId()
+    public void RunDirPaths_IncludeRunId()
     {
-        var runStore = @"D:\work\start\farmer\runs";
+        var runsPath = @"D:\work\planning-runtime\runs";
         var runId = "run-001";
 
-        Assert.Equal(@"D:\work\start\farmer\runs\run-001", RunDirectoryLayout.RunDir(runStore, runId));
-        Assert.Contains("request.json", RunDirectoryLayout.RunRequestFile(runStore, runId));
-        Assert.Contains("status.json", RunDirectoryLayout.RunStatusFile(runStore, runId));
-        Assert.Contains("task-packet.json", RunDirectoryLayout.RunTaskPacketFile(runStore, runId));
-        Assert.Contains("cost-report.json", RunDirectoryLayout.RunCostReportFile(runStore, runId));
-        Assert.Contains("review.json", RunDirectoryLayout.RunReviewFile(runStore, runId));
-        Assert.Contains("final-status.json", RunDirectoryLayout.RunFinalStatusFile(runStore, runId));
+        Assert.Equal(@"D:\work\planning-runtime\runs\run-001", RunDirectoryLayout.RunDir(runsPath, runId));
+        Assert.Contains("request.json", RunDirectoryLayout.RunRequestFile(runsPath, runId));
+        Assert.Contains("state.json", RunDirectoryLayout.RunStateFile(runsPath, runId));
+        Assert.Contains("events.jsonl", RunDirectoryLayout.RunEventsFile(runsPath, runId));
+        Assert.Contains("result.json", RunDirectoryLayout.RunResultFile(runsPath, runId));
+        Assert.Contains("task-packet.json", RunDirectoryLayout.RunTaskPacketFile(runsPath, runId));
+        Assert.Contains("cost-report.json", RunDirectoryLayout.RunCostReportFile(runsPath, runId));
+        Assert.Contains("review.json", RunDirectoryLayout.RunReviewFile(runsPath, runId));
     }
 
     [Fact]
-    public void EnsureRunDirectory_CreatesDir()
+    public void RunDirPaths_IncludeSubdirs()
+    {
+        var runsPath = @"D:\work\planning-runtime\runs";
+        var runId = "run-001";
+
+        Assert.Contains("logs", RunDirectoryLayout.RunLogsDir(runsPath, runId));
+        Assert.Contains("artifacts", RunDirectoryLayout.RunArtifactsDir(runsPath, runId));
+    }
+
+    [Fact]
+    public void EnsureRunDirectory_CreatesSubdirs()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "farmer-test-" + Guid.NewGuid().ToString("N")[..8]);
         try
         {
             RunDirectoryLayout.EnsureRunDirectory(tempDir, "run-test");
             Assert.True(Directory.Exists(Path.Combine(tempDir, "run-test")));
+            Assert.True(Directory.Exists(Path.Combine(tempDir, "run-test", "logs")));
+            Assert.True(Directory.Exists(Path.Combine(tempDir, "run-test", "artifacts")));
         }
         finally
         {
