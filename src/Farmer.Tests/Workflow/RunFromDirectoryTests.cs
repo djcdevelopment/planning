@@ -193,6 +193,54 @@ public class RunFromDirectoryTests : IDisposable
     }
 
     /// <summary>
+    /// Success-path mirror of Bug 1: on a fully-successful run, state.json must
+    /// show phase=Complete and stages_completed must include every stage.
+    /// Previously state.json was "one step behind" because EventingMiddleware's
+    /// last snapshot ran before RunWorkflow recorded the final stage and advanced
+    /// to Complete. Fix: ExecuteFromDirectoryAsync writes a final authoritative
+    /// state.json after the workflow returns.
+    /// </summary>
+    [Fact]
+    public async Task BugRegression_SuccessfulRun_FinalStateJsonAgreesWithResult()
+    {
+        WriteRequest();
+        var stages = new IWorkflowStage[]
+        {
+            SpyStage("Alpha", RunPhase.Created),
+            SpyStage("Beta", RunPhase.Loading),
+            SpyStage("Gamma", RunPhase.Reviewing),
+        };
+
+        var workflow = new RunWorkflow(
+            stages,
+            NullLogger<RunWorkflow>.Instance,
+            new IWorkflowMiddleware[] { new EventingMiddleware() });
+
+        var result = await workflow.ExecuteFromDirectoryAsync(_tempDir);
+
+        Assert.True(result.Success);
+        Assert.Equal(RunPhase.Complete, result.FinalPhase);
+        Assert.Equal(3, result.StagesCompleted.Count);
+
+        // state.json must show Complete + all 3 stages (not "Reviewing" + 2 stages)
+        var stateJson = await File.ReadAllTextAsync(Path.Combine(_tempDir, "state.json"));
+        var state = JsonSerializer.Deserialize<RunStatus>(stateJson, JsonOpts);
+        Assert.NotNull(state);
+        Assert.Equal(RunPhase.Complete, state!.Phase);
+        Assert.Equal(3, state.StagesCompleted.Count);
+        Assert.Contains("Alpha", state.StagesCompleted);
+        Assert.Contains("Beta", state.StagesCompleted);
+        Assert.Contains("Gamma", state.StagesCompleted);
+        Assert.Null(state.Error);
+
+        // result.json must agree
+        var resultJson = await File.ReadAllTextAsync(Path.Combine(_tempDir, "result.json"));
+        var resultDeserialized = JsonSerializer.Deserialize<WorkflowResult>(resultJson, JsonOpts);
+        Assert.Equal(state.Phase, resultDeserialized!.FinalPhase);
+        Assert.Equal(state.StagesCompleted.Count, resultDeserialized.StagesCompleted.Count);
+    }
+
+    /// <summary>
     /// Bug 1 regression for the StageOutcome.Failure path (no exception).
     /// </summary>
     [Fact]
