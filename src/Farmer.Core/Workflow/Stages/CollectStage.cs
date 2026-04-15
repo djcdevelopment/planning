@@ -94,7 +94,7 @@ public sealed class CollectStage : IWorkflowStage
         // so we update the run status with collection info
         var status = state.ToRunStatus();
         status.Phase = RunPhase.Collecting;
-        await _runStore.SaveRunStatusAsync(status, ct);
+        await _runStore.SaveRunStateAsync(status, ct);
 
         return StageResult.Succeeded(Name);
     }

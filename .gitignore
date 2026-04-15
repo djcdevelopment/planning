@@ -37,3 +37,6 @@ Thumbs.db
 ## Farmer runtime
 runs/
 *.tmp
+
+## Claude Code local state (settings, worktrees, sessions)
+.claude/

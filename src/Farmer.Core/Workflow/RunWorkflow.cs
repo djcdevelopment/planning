@@ -1,5 +1,7 @@
+using System.Text.Json;
 using Farmer.Core.Middleware;
 using Farmer.Core.Models;
+using Farmer.Core.Telemetry;
 using Microsoft.Extensions.Logging;
 
 namespace Farmer.Core.Workflow;
@@ -9,6 +11,12 @@ public sealed class RunWorkflow
     private readonly IReadOnlyList<IWorkflowStage> _stages;
     private readonly IReadOnlyList<IWorkflowMiddleware> _middleware;
     private readonly ILogger<RunWorkflow> _logger;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
 
     public RunWorkflow(
         IEnumerable<IWorkflowStage> stages,
@@ -20,6 +28,53 @@ public sealed class RunWorkflow
         _logger = logger;
     }
 
+    /// <summary>
+    /// Directory-based entry point. Reads request.json, runs the workflow pipeline,
+    /// writes result.json. Used by InboxWatcher and manual triggers.
+    /// </summary>
+    public async Task<WorkflowResult> ExecuteFromDirectoryAsync(string runDir, CancellationToken ct = default)
+    {
+        var requestPath = Path.Combine(runDir, "request.json");
+        if (!File.Exists(requestPath))
+            throw new FileNotFoundException($"request.json not found in {runDir}", requestPath);
+
+        var json = await File.ReadAllTextAsync(requestPath, ct);
+        var request = JsonSerializer.Deserialize<RunRequest>(json, JsonOptions)
+            ?? throw new InvalidOperationException($"Failed to deserialize request.json in {runDir}");
+
+        var state = new RunFlowState
+        {
+            RunId = request.RunId,
+            TaskId = request.TaskId,
+            WorkRequestName = request.WorkRequestName,
+            Attempt = request.AttemptId,
+            RunRequest = request,
+            RunDirectory = runDir
+        };
+
+        using var activity = FarmerActivitySource.StartRun(state.RunId);
+        FarmerMetrics.RunsStarted.Add(1);
+
+        var result = await ExecuteAsync(state, ct);
+
+        if (result.Success)
+            FarmerMetrics.RunsCompleted.Add(1);
+        else
+            FarmerMetrics.RunsFailed.Add(1);
+
+        // Write result.json (atomic)
+        var resultPath = Path.Combine(runDir, "result.json");
+        var resultJson = JsonSerializer.Serialize(result, JsonOptions);
+        var tmpPath = resultPath + ".tmp";
+        await File.WriteAllTextAsync(tmpPath, resultJson, ct);
+        File.Move(tmpPath, resultPath, overwrite: true);
+
+        return result;
+    }
+
+    /// <summary>
+    /// In-memory entry point. Used by unit tests and direct invocation.
+    /// </summary>
     public async Task<WorkflowResult> ExecuteAsync(RunFlowState state, CancellationToken ct = default)
     {
         _logger.LogInformation("Workflow starting for run {RunId} with {StageCount} stages",
@@ -79,8 +134,6 @@ public sealed class RunWorkflow
     private Task<StageResult> ExecuteWithMiddlewareAsync(
         IWorkflowStage stage, RunFlowState state, CancellationToken ct)
     {
-        // Build the middleware chain from inside out:
-        // innermost is the actual stage execution, then each middleware wraps it
         Func<Task<StageResult>> next = () => stage.ExecuteAsync(state, ct);
 
         for (var i = _middleware.Count - 1; i >= 0; i--)

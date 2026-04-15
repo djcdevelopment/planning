@@ -213,8 +213,8 @@ public class CollectStageTests
         public Task<RunRequest?> GetRunRequestAsync(string id, CancellationToken ct = default) => Task.FromResult<RunRequest?>(null);
         public Task SaveTaskPacketAsync(TaskPacket p, CancellationToken ct = default) => Task.CompletedTask;
         public Task<TaskPacket?> GetTaskPacketAsync(string id, CancellationToken ct = default) => Task.FromResult<TaskPacket?>(null);
-        public Task SaveRunStatusAsync(RunStatus s, CancellationToken ct = default) => Task.CompletedTask;
-        public Task<RunStatus?> GetRunStatusAsync(string id, CancellationToken ct = default) => Task.FromResult<RunStatus?>(null);
+        public Task SaveRunStateAsync(RunStatus s, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<RunStatus?> GetRunStateAsync(string id, CancellationToken ct = default) => Task.FromResult<RunStatus?>(null);
         public Task SaveCostReportAsync(CostReport r, CancellationToken ct = default) => Task.CompletedTask;
         public Task SaveReviewVerdictAsync(ReviewVerdict v, CancellationToken ct = default) => Task.CompletedTask;
         public Task<IReadOnlyList<string>> ListRunIdsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<string>>([]);
