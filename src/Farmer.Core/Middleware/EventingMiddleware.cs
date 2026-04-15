@@ -1,13 +1,15 @@
 using System.Text.Json;
+using Farmer.Core.Contracts;
 using Farmer.Core.Models;
 using Farmer.Core.Workflow;
 
 namespace Farmer.Core.Middleware;
 
 /// <summary>
-/// Writes events.jsonl (append-only) and state.json (snapshot) for each stage transition.
-/// Only active when RunFlowState.RunDirectory is set. Skips silently otherwise,
-/// preserving compatibility with in-memory test paths.
+/// Writes events.jsonl (append-only) and state.json (snapshot) for each stage transition,
+/// and mirrors each event to the configured <see cref="IRunEventPublisher"/> (NATS in
+/// production, noop in tests). File writes are skipped when RunFlowState.RunDirectory is
+/// null, preserving compatibility with in-memory test paths. Publisher calls fire either way.
 ///
 /// Anti-drift contract: on any failure path, this middleware MUST advance
 /// state.Phase to Failed and set state.LastError BEFORE writing the snapshot,
@@ -28,15 +30,20 @@ public sealed class EventingMiddleware : IWorkflowMiddleware
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
     };
 
+    private readonly IRunEventPublisher _publisher;
+
+    public EventingMiddleware(IRunEventPublisher? publisher = null)
+    {
+        _publisher = publisher ?? NoopRunEventPublisher.Instance;
+    }
+
     public async Task<StageResult> InvokeAsync(
         IWorkflowStage stage, RunFlowState state,
         Func<Task<StageResult>> next, CancellationToken ct = default)
     {
-        if (state.RunDirectory is null)
-            return await next();
-
-        await AppendEventAsync(state, stage.Name, "stage.started", null);
-        await WriteStateSnapshotAsync(state);
+        await EmitAsync(state, stage.Name, "stage.started", null, ct);
+        if (state.RunDirectory is not null)
+            await WriteStateSnapshotAsync(state);
 
         StageResult result;
         try
@@ -47,18 +54,20 @@ public sealed class EventingMiddleware : IWorkflowMiddleware
         {
             state.LastError = "Operation cancelled";
             state.AdvanceTo(RunPhase.Failed);
-            await AppendEventAsync(state, stage.Name, "stage.failed",
-                new { outcome = "Cancelled", error = "Operation cancelled" });
-            await WriteStateSnapshotAsync(state);
+            await EmitAsync(state, stage.Name, "stage.failed",
+                new { outcome = "Cancelled", error = "Operation cancelled" }, ct);
+            if (state.RunDirectory is not null)
+                await WriteStateSnapshotAsync(state);
             throw;
         }
         catch (Exception ex)
         {
             state.LastError = ex.Message;
             state.AdvanceTo(RunPhase.Failed);
-            await AppendEventAsync(state, stage.Name, "stage.failed",
-                new { outcome = "Exception", error = ex.Message });
-            await WriteStateSnapshotAsync(state);
+            await EmitAsync(state, stage.Name, "stage.failed",
+                new { outcome = "Exception", error = ex.Message }, ct);
+            if (state.RunDirectory is not null)
+                await WriteStateSnapshotAsync(state);
             throw;
         }
 
@@ -77,14 +86,15 @@ public sealed class EventingMiddleware : IWorkflowMiddleware
             _ => "stage.unknown"
         };
 
-        await AppendEventAsync(state, stage.Name, eventName,
-            new { outcome = result.Outcome.ToString(), error = result.Error });
-        await WriteStateSnapshotAsync(state);
+        await EmitAsync(state, stage.Name, eventName,
+            new { outcome = result.Outcome.ToString(), error = result.Error }, ct);
+        if (state.RunDirectory is not null)
+            await WriteStateSnapshotAsync(state);
 
         return result;
     }
 
-    private static async Task AppendEventAsync(RunFlowState state, string stage, string eventName, object? data)
+    private async Task EmitAsync(RunFlowState state, string stage, string eventName, object? data, CancellationToken ct)
     {
         var evt = new RunEvent
         {
@@ -93,9 +103,13 @@ public sealed class EventingMiddleware : IWorkflowMiddleware
             Event = eventName,
             Data = data
         };
-        var line = JsonSerializer.Serialize(evt, JsonOpts);
-        var path = Path.Combine(state.RunDirectory!, "events.jsonl");
-        await File.AppendAllTextAsync(path, line + "\n");
+        if (state.RunDirectory is not null)
+        {
+            var line = JsonSerializer.Serialize(evt, JsonOpts);
+            var path = Path.Combine(state.RunDirectory, "events.jsonl");
+            await File.AppendAllTextAsync(path, line + "\n", ct);
+        }
+        await _publisher.PublishAsync(evt, ct);
     }
 
     private static async Task WriteStateSnapshotAsync(RunFlowState state)

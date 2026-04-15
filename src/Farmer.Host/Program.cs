@@ -6,6 +6,7 @@ using Farmer.Core.Workflow;
 using Farmer.Core.Workflow.Stages;
 using Farmer.Agents;
 using Farmer.Host.Services;
+using Farmer.Messaging;
 using Farmer.Tools;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -46,6 +47,9 @@ builder.Services.AddSingleton<HeartbeatMiddleware>();
 // --- Retrospective agent (MAF + OpenAI, via Farmer.Agents) ---
 builder.Services.AddFarmerAgents(builder.Configuration);
 
+// --- NATS messaging: JetStream events + ObjectStore artifacts ---
+builder.Services.AddFarmerMessaging(builder.Configuration);
+
 // --- Workflow factory ---
 // Builds (RunWorkflow, CostTrackingMiddleware) per call. RunWorkflow is no
 // longer a singleton because the cost tracker it composes must be per-run.
@@ -53,7 +57,8 @@ builder.Services.AddSingleton<WorkflowPipelineFactory>();
 
 // --- Background services ---
 builder.Services.AddSingleton<RunDirectoryFactory>();
-builder.Services.AddHostedService<InboxWatcher>();
+// InboxWatcher was the file-based ingress. Retired — NATS events + HTTP /trigger
+// are the only supported paths now. See docs/adr/011-nats-cutover.md.
 
 // --- OpenTelemetry ---
 var otelResource = ResourceBuilder.CreateDefault()
@@ -65,6 +70,7 @@ builder.Services.AddOpenTelemetry()
         tracing.SetResourceBuilder(otelResource);
         tracing.AddSource(FarmerActivitySource.Name);
         tracing.AddSource("Experimental.Microsoft.Agents.AI"); // MAF agent spans
+        tracing.AddSource("NATS.Net");                          // NATS client publish/subscribe spans
         tracing.AddAspNetCoreInstrumentation();
         tracing.AddHttpClientInstrumentation(); // outbound OpenAI API calls
         if (telemetrySettings.EnableOtlpExporter)
@@ -105,16 +111,18 @@ app.MapPost("/trigger", async (
     HttpContext ctx,
     RunDirectoryFactory dirFactory,
     WorkflowPipelineFactory pipelineFactory,
-    IRunStore runStore) =>
+    IRunStore runStore,
+    IRunArtifactStore artifactStore) =>
 {
     using var reader = new StreamReader(ctx.Request.Body);
     var body = await reader.ReadToEndAsync();
     var tempFile = Path.GetTempFileName();
     await File.WriteAllTextAsync(tempFile, body);
 
+    string? runDir = null;
     try
     {
-        var runDir = await dirFactory.CreateFromInboxFileAsync(tempFile);
+        runDir = await dirFactory.CreateFromInboxFileAsync(tempFile);
         File.Delete(tempFile);
 
         var (workflow, costTracker) = pipelineFactory.Create();
@@ -123,13 +131,33 @@ app.MapPost("/trigger", async (
         var costReport = costTracker.GetReport(result.RunId);
         await runStore.SaveCostReportAsync(costReport);
 
+        // Mirror the run directory to NATS ObjectStore so artifacts are accessible
+        // over the bus without requiring filesystem access. Best-effort; NATS outage
+        // never fails a run. Key layout: {runId}/{filename}.
+        await UploadRunArtifactsAsync(artifactStore, result.RunId, runDir, ctx.RequestAborted);
+
         return Results.Ok(result);
     }
     catch (Exception ex)
     {
-        File.Delete(tempFile);
+        if (File.Exists(tempFile)) File.Delete(tempFile);
         return Results.Problem(ex.Message);
     }
 });
+
+static async Task UploadRunArtifactsAsync(IRunArtifactStore store, string runId, string runDir, CancellationToken ct)
+{
+    if (!Directory.Exists(runDir)) return;
+    foreach (var file in Directory.EnumerateFiles(runDir))
+    {
+        var name = Path.GetFileName(file);
+        try
+        {
+            var bytes = await File.ReadAllBytesAsync(file, ct);
+            await store.PutAsync(runId, name, bytes, ct);
+        }
+        catch { /* already logged inside the store; continuing */ }
+    }
+}
 
 app.Run("http://localhost:5100");
