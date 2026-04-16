@@ -57,7 +57,8 @@ public sealed class WorkflowPipelineFactory
         };
 
         var logger = _sp.GetRequiredService<ILogger<RunWorkflow>>();
-        var workflow = new RunWorkflow(stages, logger, middleware);
+        var vmManager = _sp.GetRequiredService<Farmer.Core.Contracts.IVmManager>();
+        var workflow = new RunWorkflow(stages, logger, middleware, vmManager);
 
         return (workflow, costTracker);
     }
