@@ -28,7 +28,18 @@ public sealed class RunDirectoryFactory
     /// Parse a minimal inbox trigger file and create a fully initialized run directory.
     /// Returns the path to the run directory.
     /// </summary>
-    public async Task<string> CreateFromInboxFileAsync(string inboxFilePath, CancellationToken ct = default)
+    /// <param name="priorRunId">When set, the new RunRequest's ParentRunId is populated.
+    /// Used by the retry driver to link attempts in a chain.</param>
+    /// <param name="priorFeedback">When set, the new RunRequest's Feedback is populated.
+    /// LoadPromptsStage will prepend this as a synthetic 0-feedback.md prompt file so
+    /// the VM's Claude sees the retry feedback as prompt #0.</param>
+    /// <param name="attemptNumber">Attempt index in the retry chain. First attempt is 1.</param>
+    public async Task<string> CreateFromInboxFileAsync(
+        string inboxFilePath,
+        CancellationToken ct = default,
+        string? priorRunId = null,
+        string? priorFeedback = null,
+        int attemptNumber = 1)
     {
         var triggerJson = await File.ReadAllTextAsync(inboxFilePath, ct);
         var trigger = JsonSerializer.Deserialize<InboxTrigger>(triggerJson, JsonOptions)
@@ -47,11 +58,14 @@ public sealed class RunDirectoryFactory
         {
             RunId = runId,
             TaskId = $"task-{Guid.NewGuid().ToString("N")[..8]}",
-            AttemptId = 1,
+            AttemptId = attemptNumber,
             WorkRequestName = trigger.WorkRequestName,
             PromptCount = 0,
             Source = trigger.Source ?? "inbox",
             WorkerMode = trigger.WorkerMode,
+            RetryPolicy = trigger.RetryPolicy,
+            ParentRunId = priorRunId ?? trigger.ParentRunId,
+            Feedback = priorFeedback ?? trigger.Feedback,
         };
 
         // Write request.json
@@ -77,4 +91,16 @@ public sealed class InboxTrigger
     /// <summary>Optional worker_mode override passed through to TaskPacket. "real" or "fake". Null = use config default.</summary>
     [System.Text.Json.Serialization.JsonPropertyName("worker_mode")]
     public string? WorkerMode { get; set; }
+
+    /// <summary>Optional opt-in retry policy for this /trigger call. See ADR-011.</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("retry_policy")]
+    public RetryPolicy? RetryPolicy { get; set; }
+
+    /// <summary>Optional link to a prior run in a manually-chained retry. Usually populated by the driver, not the caller.</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("parent_run_id")]
+    public string? ParentRunId { get; set; }
+
+    /// <summary>Optional markdown feedback to inject as prompt #0. Usually populated by the retry driver.</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("feedback")]
+    public string? Feedback { get; set; }
 }

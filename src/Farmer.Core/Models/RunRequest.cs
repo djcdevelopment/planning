@@ -42,4 +42,23 @@ public sealed class RunRequest
     /// </summary>
     [JsonPropertyName("worker_mode")]
     public string? WorkerMode { get; set; }
+
+    /// <summary>
+    /// Opt-in retry configuration. When null or Enabled=false, /trigger runs one
+    /// attempt and returns. When Enabled=true, /trigger loops up to MaxAttempts
+    /// and re-runs the workflow with feedback injected from the prior attempt's
+    /// ReviewVerdict. Chain links: each retry has ParentRunId pointing at the
+    /// previous run. See ADR-011.
+    /// </summary>
+    [JsonPropertyName("retry_policy")]
+    public RetryPolicy? RetryPolicy { get; set; }
+
+    /// <summary>
+    /// Markdown feedback from a prior attempt's retrospective, set by the retry
+    /// driver before submitting a retry run. Null on a first attempt. Consumed by
+    /// LoadPromptsStage, which prepends a synthetic 0-feedback.md prompt file so
+    /// Claude on the VM sees the feedback as prompt #0.
+    /// </summary>
+    [JsonPropertyName("feedback")]
+    public string? Feedback { get; set; }
 }
