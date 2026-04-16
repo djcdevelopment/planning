@@ -57,6 +57,7 @@ builder.Services.AddSingleton<WorkflowPipelineFactory>();
 
 // --- Background services ---
 builder.Services.AddSingleton<RunDirectoryFactory>();
+builder.Services.AddSingleton<RetryDriver>();
 // InboxWatcher was the file-based ingress. Retired — NATS events + HTTP /trigger
 // are the only supported paths now. See docs/adr/011-nats-cutover.md.
 
@@ -109,55 +110,38 @@ app.MapGet("/runs/{runId}", async (string runId, IRunStore store) =>
 
 app.MapPost("/trigger", async (
     HttpContext ctx,
-    RunDirectoryFactory dirFactory,
-    WorkflowPipelineFactory pipelineFactory,
-    IRunStore runStore,
-    IRunArtifactStore artifactStore) =>
+    RetryDriver driver,
+    IRunStore runStore) =>
 {
     using var reader = new StreamReader(ctx.Request.Body);
     var body = await reader.ReadToEndAsync();
     var tempFile = Path.GetTempFileName();
     await File.WriteAllTextAsync(tempFile, body);
 
-    string? runDir = null;
     try
     {
-        runDir = await dirFactory.CreateFromInboxFileAsync(tempFile);
-        File.Delete(tempFile);
+        var attempts = await driver.RunAsync(tempFile, ctx.RequestAborted);
 
-        var (workflow, costTracker) = pipelineFactory.Create();
-        var result = await workflow.ExecuteFromDirectoryAsync(runDir);
+        // Cost reports use the final attempt's runId; per-attempt cost is handled
+        // inside each workflow execution via CostTrackingMiddleware.
+        var final = attempts[^1];
 
-        var costReport = costTracker.GetReport(result.RunId);
-        await runStore.SaveCostReportAsync(costReport);
-
-        // Mirror the run directory to NATS ObjectStore so artifacts are accessible
-        // over the bus without requiring filesystem access. Best-effort; NATS outage
-        // never fails a run. Key layout: {runId}/{filename}.
-        await UploadRunArtifactsAsync(artifactStore, result.RunId, runDir, ctx.RequestAborted);
-
-        return Results.Ok(result);
+        // Backward-compat response: when there's only one attempt (retry disabled or
+        // short-circuited), return the single WorkflowResult directly so existing
+        // callers (curl, smoke scripts, Farmer.SmokeTrace.ps1) keep working. When a
+        // retry chain ran, return the whole list plus the final result on top-level.
+        if (attempts.Count == 1)
+            return Results.Ok(final);
+        return Results.Ok(new { attempts, final });
     }
     catch (Exception ex)
     {
-        if (File.Exists(tempFile)) File.Delete(tempFile);
         return Results.Problem(ex.Message);
     }
-});
-
-static async Task UploadRunArtifactsAsync(IRunArtifactStore store, string runId, string runDir, CancellationToken ct)
-{
-    if (!Directory.Exists(runDir)) return;
-    foreach (var file in Directory.EnumerateFiles(runDir))
+    finally
     {
-        var name = Path.GetFileName(file);
-        try
-        {
-            var bytes = await File.ReadAllBytesAsync(file, ct);
-            await store.PutAsync(runId, name, bytes, ct);
-        }
-        catch { /* already logged inside the store; continuing */ }
+        if (File.Exists(tempFile)) File.Delete(tempFile);
     }
-}
+});
 
 app.Run("http://localhost:5100");
