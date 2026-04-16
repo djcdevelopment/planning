@@ -22,4 +22,13 @@ public sealed class FarmerSettings
     public int SshDispatchTimeoutMinutes { get; set; } = 30;
     public int SshfsCacheLagMs { get; set; } = 500;
     public int ProgressPollIntervalMs { get; set; } = 2000;
+
+    /// <summary>
+    /// Worker mode baked into every run's task-packet.json by default. Worker.sh on the
+    /// VM reads `.worker_mode` and switches between calling Claude CLI ("real") and
+    /// producing canned output ("fake"). Overridable per run by setting `worker_mode`
+    /// on the incoming RunRequest. Default "real" keeps production behavior intact;
+    /// set to "fake" in dev/CI environments to avoid burning Claude tokens on smoke tests.
+    /// </summary>
+    public string DefaultWorkerMode { get; set; } = "real";
 }

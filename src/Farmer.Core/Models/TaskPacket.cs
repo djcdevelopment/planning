@@ -19,6 +19,14 @@ public sealed class TaskPacket
     [JsonPropertyName("feedback")]
     public string? Feedback { get; set; }
 
+    /// <summary>
+    /// Worker execution mode read by worker.sh on the VM: "real" (invoke Claude CLI)
+    /// or "fake" (canned output, no LLM call). Populated by LoadPromptsStage from
+    /// RunRequest.WorkerMode ?? FarmerSettings.DefaultWorkerMode.
+    /// </summary>
+    [JsonPropertyName("worker_mode")]
+    public string WorkerMode { get; set; } = "real";
+
     [JsonPropertyName("created_at")]
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
