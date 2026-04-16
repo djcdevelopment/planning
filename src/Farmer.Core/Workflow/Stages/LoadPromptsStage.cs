@@ -49,12 +49,18 @@ public sealed class LoadPromptsStage : IWorkflowStage
             });
         }
 
+        // Worker mode precedence: per-request override > config default > "real" as the
+        // final fallback. worker.sh on the VM reads `worker_mode` from task-packet.json.
+        var workerMode = state.RunRequest?.WorkerMode
+            ?? (string.IsNullOrWhiteSpace(_settings.DefaultWorkerMode) ? "real" : _settings.DefaultWorkerMode);
+
         var taskPacket = new TaskPacket
         {
             RunId = state.RunId,
             WorkRequestName = state.WorkRequestName,
             BranchName = $"{state.Vm?.Name ?? "local"}-{state.WorkRequestName}",
-            Prompts = prompts
+            Prompts = prompts,
+            WorkerMode = workerMode,
         };
 
         state.TaskPacket = taskPacket;

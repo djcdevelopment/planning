@@ -33,4 +33,13 @@ public sealed class RunRequest
     /// </summary>
     [JsonPropertyName("parent_run_id")]
     public string? ParentRunId { get; set; }
+
+    /// <summary>
+    /// Optional per-request override for worker execution mode: "real" or "fake".
+    /// When null (default), LoadPromptsStage falls back to FarmerSettings.DefaultWorkerMode.
+    /// Use "fake" for smoke tests / CI runs that should exercise the pipeline plumbing
+    /// without invoking Claude CLI on the VM.
+    /// </summary>
+    [JsonPropertyName("worker_mode")]
+    public string? WorkerMode { get; set; }
 }

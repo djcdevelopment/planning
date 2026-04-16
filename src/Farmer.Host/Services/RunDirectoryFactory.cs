@@ -50,7 +50,8 @@ public sealed class RunDirectoryFactory
             AttemptId = 1,
             WorkRequestName = trigger.WorkRequestName,
             PromptCount = 0,
-            Source = trigger.Source ?? "inbox"
+            Source = trigger.Source ?? "inbox",
+            WorkerMode = trigger.WorkerMode,
         };
 
         // Write request.json
@@ -72,4 +73,8 @@ public sealed class InboxTrigger
 
     [System.Text.Json.Serialization.JsonPropertyName("source")]
     public string? Source { get; set; }
+
+    /// <summary>Optional worker_mode override passed through to TaskPacket. "real" or "fake". Null = use config default.</summary>
+    [System.Text.Json.Serialization.JsonPropertyName("worker_mode")]
+    public string? WorkerMode { get; set; }
 }
