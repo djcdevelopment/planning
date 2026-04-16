@@ -4,21 +4,20 @@ using Farmer.Core.Models;
 namespace Farmer.Core.Workflow;
 
 /// <summary>
-/// Renders a prior attempt's <see cref="ReviewVerdict"/> as a Markdown document that
-/// the retry driver writes into a new run's plans dir as <c>0-feedback.md</c>. The
-/// VM's CLAUDE.md already tells Claude that the first prompt on a retry run is
-/// reviewer feedback, so this output is consumed as-is — no VM-side change needed.
-///
-/// Scope note: Phase 7 MVP renders <see cref="ReviewVerdict.Findings"/> +
-/// <see cref="ReviewVerdict.Suggestions"/> (plain-string lists inside the verdict).
-/// The structured <see cref="DirectiveSuggestion"/> list from
-/// <c>RetrospectiveResult.DirectiveSuggestions</c> is deferred to a follow-up pass —
-/// <see cref="RunFlowState"/> doesn't carry it today, so threading it here would
-/// require surface changes across the pipeline. Not worth the churn for the MVP.
+/// Renders a prior attempt's <see cref="ReviewVerdict"/> (and, when available, the
+/// retrospective's structured <see cref="DirectiveSuggestion"/> list) as a Markdown
+/// document that the retry driver writes into a new run's plans dir as
+/// <c>0-feedback.md</c>. The VM's CLAUDE.md already tells Claude that the first
+/// prompt on a retry run is reviewer feedback, so this output is consumed as-is --
+/// no VM-side change needed.
 /// </summary>
 public static class FeedbackBuilder
 {
-    public static string Render(ReviewVerdict verdict, int priorAttempt, string? priorRunId)
+    public static string Render(
+        ReviewVerdict verdict,
+        int priorAttempt,
+        string? priorRunId,
+        IReadOnlyList<DirectiveSuggestion>? directives = null)
     {
         var sb = new StringBuilder();
 
@@ -43,6 +42,22 @@ public static class FeedbackBuilder
             sb.AppendLine();
             foreach (var s in verdict.Suggestions)
                 sb.AppendLine($"- {s}");
+            sb.AppendLine();
+        }
+
+        if (directives is { Count: > 0 })
+        {
+            sb.AppendLine("## Specific directives");
+            sb.AppendLine();
+            foreach (var d in directives)
+            {
+                var target = string.IsNullOrWhiteSpace(d.Target) ? "(unspecified)" : d.Target;
+                sb.AppendLine($"- **[{d.Scope} -> {target}]** {d.Rationale}");
+                if (!string.IsNullOrWhiteSpace(d.SuggestedValue))
+                    sb.AppendLine($"  - Suggested: `{d.SuggestedValue}`");
+                if (!string.IsNullOrWhiteSpace(d.CurrentValue))
+                    sb.AppendLine($"  - Current: `{d.CurrentValue}`");
+            }
             sb.AppendLine();
         }
 

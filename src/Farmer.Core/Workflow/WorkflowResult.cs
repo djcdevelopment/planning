@@ -22,6 +22,15 @@ public sealed class WorkflowResult
     /// </summary>
     public ReviewVerdict? ReviewVerdict { get; set; }
 
+    /// <summary>
+    /// Structured directive suggestions from the retrospective agent. Distinct from
+    /// <see cref="Farmer.Core.Models.ReviewVerdict.Suggestions"/> (flat strings) -- each item carries
+    /// a scope, target, rationale, and suggested value. Threaded through to
+    /// FeedbackBuilder so retry prompts can cite specific files/changes.
+    /// Empty when the retrospective stage didn't run or the agent produced none.
+    /// </summary>
+    public IReadOnlyList<DirectiveSuggestion> DirectiveSuggestions { get; set; } = Array.Empty<DirectiveSuggestion>();
+
     public static WorkflowResult FromState(RunFlowState state, bool success, string? error = null) => new()
     {
         RunId = state.RunId,
@@ -32,5 +41,6 @@ public sealed class WorkflowResult
         StagesCompleted = new List<string>(state.StagesCompleted),
         StartedAt = state.StartedAt,
         ReviewVerdict = state.ReviewVerdict,
+        DirectiveSuggestions = state.DirectiveSuggestions,
     };
 }
