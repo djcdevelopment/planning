@@ -2,6 +2,7 @@ using System.Text.Json;
 using Farmer.Core.Middleware;
 using Farmer.Core.Models;
 using Farmer.Core.Workflow;
+using Farmer.Tests.TestHelpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -349,22 +350,4 @@ public class RunFromDirectoryTests : IDisposable
     }
 
     /// <summary>
-    /// Simple stage implementation for tests.
-    /// </summary>
-    private sealed class LambdaStage : IWorkflowStage
-    {
-        private readonly Func<RunFlowState, Task<StageResult>> _execute;
-        public string Name { get; }
-        public RunPhase Phase { get; }
-
-        public LambdaStage(string name, RunPhase phase, Func<RunFlowState, Task<StageResult>> execute)
-        {
-            Name = name;
-            Phase = phase;
-            _execute = execute;
-        }
-
-        public Task<StageResult> ExecuteAsync(RunFlowState state, CancellationToken ct = default)
-            => _execute(state);
-    }
 }

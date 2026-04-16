@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Farmer.Core.Contracts;
 using Farmer.Core.Middleware;
 using Farmer.Core.Models;
 using Farmer.Core.Telemetry;
@@ -11,6 +12,7 @@ public sealed class RunWorkflow
     private readonly IReadOnlyList<IWorkflowStage> _stages;
     private readonly IReadOnlyList<IWorkflowMiddleware> _middleware;
     private readonly ILogger<RunWorkflow> _logger;
+    private readonly IVmManager? _vmManager;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -21,11 +23,13 @@ public sealed class RunWorkflow
     public RunWorkflow(
         IEnumerable<IWorkflowStage> stages,
         ILogger<RunWorkflow> logger,
-        IEnumerable<IWorkflowMiddleware>? middleware = null)
+        IEnumerable<IWorkflowMiddleware>? middleware = null,
+        IVmManager? vmManager = null)
     {
         _stages = stages.ToList();
         _middleware = middleware?.ToList() ?? [];
         _logger = logger;
+        _vmManager = vmManager;
     }
 
     /// <summary>
@@ -91,55 +95,87 @@ public sealed class RunWorkflow
         _logger.LogInformation("Workflow starting for run {RunId} with {StageCount} stages",
             state.RunId, _stages.Count);
 
-        foreach (var stage in _stages)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-
-            state.AdvanceTo(stage.Phase);
-            _logger.LogInformation("Stage [{StageName}] starting (phase: {Phase})",
-                stage.Name, stage.Phase);
-
-            StageResult result;
-            try
+            foreach (var stage in _stages)
             {
-                result = await ExecuteWithMiddlewareAsync(stage, state, ct);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Stage [{StageName}] threw an exception", stage.Name);
-                result = StageResult.Failed(stage.Name, ex.Message);
+                ct.ThrowIfCancellationRequested();
+
+                state.AdvanceTo(stage.Phase);
+                _logger.LogInformation("Stage [{StageName}] starting (phase: {Phase})",
+                    stage.Name, stage.Phase);
+
+                StageResult result;
+                try
+                {
+                    result = await ExecuteWithMiddlewareAsync(stage, state, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Stage [{StageName}] threw an exception", stage.Name);
+                    result = StageResult.Failed(stage.Name, ex.Message);
+                }
+
+                switch (result.Outcome)
+                {
+                    case StageOutcome.Success:
+                        state.RecordStageComplete(stage.Name);
+                        _logger.LogInformation("Stage [{StageName}] succeeded", stage.Name);
+                        break;
+
+                    case StageOutcome.Skip:
+                        _logger.LogInformation("Stage [{StageName}] skipped: {Reason}",
+                            stage.Name, result.Error);
+                        break;
+
+                    case StageOutcome.Failure:
+                        state.LastError = result.Error;
+                        state.AdvanceTo(RunPhase.Failed);
+                        _logger.LogError("Stage [{StageName}] failed: {Error}", stage.Name, result.Error);
+                        return WorkflowResult.FromState(state, success: false);
+
+                    default:
+                        throw new InvalidOperationException($"Unknown stage outcome: {result.Outcome}");
+                }
             }
 
-            switch (result.Outcome)
-            {
-                case StageOutcome.Success:
-                    state.RecordStageComplete(stage.Name);
-                    _logger.LogInformation("Stage [{StageName}] succeeded", stage.Name);
-                    break;
-
-                case StageOutcome.Skip:
-                    _logger.LogInformation("Stage [{StageName}] skipped: {Reason}",
-                        stage.Name, result.Error);
-                    break;
-
-                case StageOutcome.Failure:
-                    state.LastError = result.Error;
-                    state.AdvanceTo(RunPhase.Failed);
-                    _logger.LogError("Stage [{StageName}] failed: {Error}", stage.Name, result.Error);
-                    return WorkflowResult.FromState(state, success: false);
-
-                default:
-                    throw new InvalidOperationException($"Unknown stage outcome: {result.Outcome}");
-            }
+            state.AdvanceTo(RunPhase.Complete);
+            _logger.LogInformation("Workflow completed for run {RunId}", state.RunId);
+            return WorkflowResult.FromState(state, success: true);
         }
+        finally
+        {
+            await ReleaseReservedVmAsync(state);
+        }
+    }
 
-        state.AdvanceTo(RunPhase.Complete);
-        _logger.LogInformation("Workflow completed for run {RunId}", state.RunId);
-        return WorkflowResult.FromState(state, success: true);
+    /// <summary>
+    /// Returns the reserved VM (if any) to the pool. Always called from ExecuteAsync's
+    /// finally block so a VM acquired by ReserveVmStage doesn't leak when the workflow
+    /// fails mid-pipeline, throws, or completes successfully. Defensive: only releases
+    /// when the VM is currently Reserved (not Error / Busy / Draining), and never
+    /// throws on release-time errors -- a leaky log is better than failing the workflow.
+    /// </summary>
+    private async Task ReleaseReservedVmAsync(RunFlowState state)
+    {
+        if (_vmManager is null || state.Vm is null) return;
+        try
+        {
+            if (_vmManager.GetState(state.Vm.Name) != VmState.Reserved)
+            {
+                _logger.LogDebug("VM [{Vm}] not in Reserved state at release time; skipping", state.Vm.Name);
+                return;
+            }
+            await _vmManager.ReleaseAsync(state.Vm.Name);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to release VM [{Vm}] for run {RunId}", state.Vm.Name, state.RunId);
+        }
     }
 
     private Task<StageResult> ExecuteWithMiddlewareAsync(
