@@ -14,7 +14,8 @@ Everything below is merged to `main`.
 - **Phase 6** shipped: real `worker.sh` + Claude CLI on VM, `RetrospectiveStage` + MAF OpenAI `gpt-4o-mini`.
 - **NATS cutover (PR #5)**: file-based `InboxWatcher` retired. Every stage transition publishes a `RunEvent` to the `FARMER_RUNS` JetStream stream; run artifacts upload to the `farmer-runs-out` ObjectStore bucket. See [ADR-010](./docs/adr/adr-010-nats-messaging-cutover.md).
 - **Phase 7 retry driver (PR #8)**: opt-in retry via `RetryPolicy` on the `/trigger` body. Driver loops up to `max_attempts` on configured verdicts; each retry gets a synthetic `0-feedback.md` prompt with the prior attempt's `ReviewVerdict.Findings` + `Suggestions`. Chain linked via `parent_run_id`. See [ADR-011](./docs/adr/adr-011-retry-driver.md).
-- **Tests**: 126 green (123 unit + 3 integration with NatsServerFixture).
+- **VM release fix (PR #10)**: `RunWorkflow.ExecuteAsync` now releases the reserved VM in a `finally` block. Before this, `IVmManager.ReleaseAsync` was never called by anything; in-process retry chains failed at attempt 2's ReserveVm. See [docs/session-retro-2026-04-15.md](./docs/session-retro-2026-04-15.md).
+- **Tests**: 131 green (128 unit + 3 integration with NatsServerFixture).
 
 ## The plan file for the active session
 
@@ -67,7 +68,7 @@ cd C:\work\iso\planning
 
 # Build + test
 dotnet build src\Farmer.sln                # expect clean, 0 warnings
-dotnet test src\Farmer.sln                 # expect 126 green (123 unit + 3 integration)
+dotnet test src\Farmer.sln                 # expect 131 green (128 unit + 3 integration)
 
 # Start infra (idempotent; no-ops if already listening)
 .\infra\start-nats.ps1                     # nats-server on :4222/:8222
