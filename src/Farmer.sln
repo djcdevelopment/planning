@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Farmer.Agents", "Farmer.Age
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Farmer.Messaging", "Farmer.Messaging\Farmer.Messaging.csproj", "{E403119B-56C2-46F2-822B-0DAFB51B1F80}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Farmer.Tests.Integration", "Farmer.Tests.Integration\Farmer.Tests.Integration.csproj", "{5ABC531F-8E5C-4A7E-BE6C-E70122A03A5B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -97,6 +99,18 @@ Global
 		{E403119B-56C2-46F2-822B-0DAFB51B1F80}.Release|x64.Build.0 = Release|Any CPU
 		{E403119B-56C2-46F2-822B-0DAFB51B1F80}.Release|x86.ActiveCfg = Release|Any CPU
 		{E403119B-56C2-46F2-822B-0DAFB51B1F80}.Release|x86.Build.0 = Release|Any CPU
+		{5ABC531F-8E5C-4A7E-BE6C-E70122A03A5B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5ABC531F-8E5C-4A7E-BE6C-E70122A03A5B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5ABC531F-8E5C-4A7E-BE6C-E70122A03A5B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5ABC531F-8E5C-4A7E-BE6C-E70122A03A5B}.Debug|x64.Build.0 = Debug|Any CPU
+		{5ABC531F-8E5C-4A7E-BE6C-E70122A03A5B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{5ABC531F-8E5C-4A7E-BE6C-E70122A03A5B}.Debug|x86.Build.0 = Debug|Any CPU
+		{5ABC531F-8E5C-4A7E-BE6C-E70122A03A5B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5ABC531F-8E5C-4A7E-BE6C-E70122A03A5B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5ABC531F-8E5C-4A7E-BE6C-E70122A03A5B}.Release|x64.ActiveCfg = Release|Any CPU
+		{5ABC531F-8E5C-4A7E-BE6C-E70122A03A5B}.Release|x64.Build.0 = Release|Any CPU
+		{5ABC531F-8E5C-4A7E-BE6C-E70122A03A5B}.Release|x86.ActiveCfg = Release|Any CPU
+		{5ABC531F-8E5C-4A7E-BE6C-E70122A03A5B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
