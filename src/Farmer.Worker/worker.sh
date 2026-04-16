@@ -13,6 +13,10 @@
 # high max-turns. The VM is the sandbox. See ADR-008.
 #
 # FARMER_WORKER_MODE=fake runs without Claude CLI (canned output).
+# FARMER_WORKER_MODE=fake-bad produces adversarial output on first attempt
+#   (BUILD FAILED, npm errors, exit=1) so the retrospective realistically
+#   verdicts Retry; on retry (task-packet.feedback populated) it falls
+#   through to fake's clean output to demonstrate the feedback loop.
 # Default is real.
 #
 
@@ -177,6 +181,26 @@ run_claude_fake() {
   return 0
 }
 
+# Adversarial fake mode used to demo the retry loop with a real Retry verdict.
+# Writes output that the retrospective agent will realistically flag (explicit
+# BUILD FAILED markers, npm error codes, exit code 1). Paired with the dispatch
+# block below: on a retry attempt (FEEDBACK populated), worker.sh falls through
+# to run_claude_fake instead, pretending the reviewer's feedback was addressed.
+run_claude_fake_bad() {
+  local prompt_file="$1"
+  mkdir -p "${PROJECT_ROOT}/.farmer-fake"
+  echo "[fake-bad] synthetic failure for retrospective testing $(date -u -Iseconds)" >> "${PROJECT_ROOT}/.farmer-fake/last-run.log"
+  cat > "${OUTPUT_DIR}/prompt-${PROMPT_INDEX}-stdout.txt" <<EOF
+BUILD FAILED -- prompt $(basename "$prompt_file")
+error: unable to install required dependencies (synthetic failure, WORKER_MODE=fake-bad)
+npm ERR! code ELIFECYCLE
+npm ERR! Exit status 1
+No files were written. Nothing compiles. No tests added.
+EOF
+  echo "npm ERR! (synthetic) prompt $(basename "$prompt_file") failed" > "${OUTPUT_DIR}/prompt-${PROMPT_INDEX}-stderr.txt"
+  return 1
+}
+
 # --- Main ---
 main() {
   write_progress "initializing" "worker.sh started, run_id=$RUN_ID, mode=$WORKER_MODE"
@@ -227,6 +251,16 @@ main() {
     local exit_code=0
     if [ "$WORKER_MODE" = "fake" ]; then
       run_claude_fake "$prompt_path" || exit_code=$?
+    elif [ "$WORKER_MODE" = "fake-bad" ]; then
+      # Retry-demo behavior: if the reviewer left feedback (attempt > 1), pretend
+      # we addressed it and produce clean output so the retrospective can observe
+      # the "improved" second attempt. First attempt has no feedback -> synthetic
+      # failure that the retrospective will flag.
+      if [ -n "$FEEDBACK" ]; then
+        run_claude_fake "$prompt_path" || exit_code=$?
+      else
+        run_claude_fake_bad "$prompt_path" || exit_code=$?
+      fi
     else
       run_claude_real "$prompt_path" || exit_code=$?
     fi
