@@ -98,6 +98,18 @@ curl.exe -X POST -H "Content-Type: application/json" `
 
 Expected `/trigger` response shape: `{ "runId": "...", "success": true, "finalPhase": "Complete", "stagesCompleted": ["CreateRun","LoadPrompts","ReserveVm","Deliver","Dispatch","Collect","Retrospective"], ... }`. Duration is ~2s with a fake worker, ~5-20 min with a real Claude CLI session.
 
+### Retry (Phase 7)
+
+```powershell
+curl.exe -X POST -H "Content-Type: application/json" -d '{
+  "work_request_name": "react-grid-component",
+  "worker_mode": "fake",
+  "retry_policy": { "enabled": true, "max_attempts": 2, "retry_on_verdicts": ["Retry"] }
+}' http://localhost:5100/trigger
+```
+
+When the retrospective verdict is in `retry_on_verdicts`, the driver loops: each retry gets a synthetic `0-feedback.md` prompt with the prior attempt's findings injected. The chain is linked via `parent_run_id`. Without an OpenAI key, retrospective AutoPasses (null verdict, no retry); with a key, the verdict drives the loop. See [ADR-011](./docs/adr/adr-011-retry-driver.md).
+
 ## Directory layout
 
 ```
@@ -109,9 +121,9 @@ C:\work\iso\planning\        ← this repo (the engine)
 │   ├── Farmer.Agents\       ← Microsoft Agent Framework surface (retrospective)
 │   ├── Farmer.Messaging\    ← NATS JetStream + ObjectStore; DI-injected event publisher + artifact store
 │   ├── Farmer.Worker\       ← VM-side worker scripts + CLAUDE.md
-│   └── Farmer.Tests\        ← xUnit tests (107+ on net9)
+│   └── Farmer.Tests\        ← xUnit tests (126 on net9, incl. 3 integration)
 ├── docs\
-│   └── adr\                 ← Architecture Decision Records (ADR-010 = NATS cutover)
+│   └── adr\                 ← Architecture Decision Records (ADR-010 NATS cutover, ADR-011 retry driver)
 ├── infra\                   ← nats.conf, jaeger.yaml, start-*.ps1
 ├── tools\                   ← nats-server.exe (in-repo), jaeger.exe (downloaded)
 ├── scripts\                 ← dev-run.ps1, _waterfall.ps1, demo runbook
@@ -142,7 +154,10 @@ C:\work\iso\planning-runtime\  ← runtime state, NOT in git (configurable, see 
 | #2 | Phase 6 retrospective loop | merged |
 | #3 | Phase 5 externalized runtime | merged |
 | #4 | Phase 5 end-to-end verification | merged |
-| #5 | NATS messaging cutover — file-based inbox retired | merged 2026-04-15 |
+| #5 | NATS messaging cutover -- file-based inbox retired | merged 2026-04-15 |
+| #6 | ADR-010 + README + integration tests | merged 2026-04-15 |
+| #7 | worker_mode contract + Farmer.SmokeTrace.ps1 | merged 2026-04-15 |
+| #8 | Phase 7: opt-in retry driver with feedback injection | merged 2026-04-15 |
 
 `claude/phase5-otel-api` was a parallel Phase 5 implementation from a different agent; we cherry-picked `WorkflowPipelineFactory` (see [ADR-004](./docs/adr/adr-004-workflow-pipeline-factory.md)). Don't merge the rest — it's a different architecture.
 
