@@ -4,49 +4,44 @@ If you're an AI session (Claude Code, another agent, future-me) picking up this 
 
 ## What this project is (one paragraph)
 
-**Farmer** is a .NET 8 control plane that orchestrates Claude CLI workers on Hyper-V Ubuntu VMs, with a Microsoft Agent Framework (MAF) retrospective agent on the host that reviews every run. Inbox-triggered, file-first, OTel-instrumented throughout. Target audience: Azure/.NET developers learning agent orchestration. The competitive differentiator is using MAF "as much as possible" while keeping workers autonomous on VMs. See [README.md](./README.md) for the full pitch and architecture diagram.
+**Farmer** is a .NET 9 control plane that orchestrates Claude CLI workers on Hyper-V Ubuntu VMs, with a Microsoft Agent Framework (MAF) retrospective agent on the host that reviews every run. NATS JetStream + ObjectStore for coordination, Jaeger for traces, HTTP `/trigger` for ingress, OTel-instrumented throughout. Target audience: Azure/.NET developers learning agent orchestration. The competitive differentiator is using MAF "as much as possible" while keeping workers autonomous on VMs. See [README.md](./README.md) for the full pitch and architecture diagram.
 
-## Current phase state (as of last session)
+## Current phase state (as of 2026-04-15 session)
 
-- **Phase 5** shipped: externalized runtime, file-first `InboxWatcher`, OTel in Aspire, real end-to-end verified against `claudefarm2` with a fake worker. Two feature branches pushed (`claude/phase5-externalized-runtime` and `claude/phase5-end-to-end-verification`), neither merged to main yet.
-- **Phase 6** shipped on `claude/phase6-retrospective-loop`:
-  - Real `worker.sh` runs Claude CLI in full dangerous mode on VM
-  - `RetrospectiveStage` calls real OpenAI `gpt-4o-mini` via MAF to review every run
-  - Three new artifacts per run: `review.json` + `qa-retro.md` + `directive-suggestions.md`
-  - First real end-to-end verified: Claude built a TypeScript API on claudefarm2, OpenAI accepted with risk_score=15
-  - 7 commits on the branch, 110 tests green
-  - See [docs/phase6-retro-verification.md](./docs/phase6-retro-verification.md) for the first retrospective run
+Everything below is merged to `main`.
 
-Check `git log --oneline claude/phase5-end-to-end-verification..HEAD` on the active branch to see exactly what's committed.
+- **Phase 5** shipped: externalized runtime, OTel, real SSH end-to-end verified.
+- **Phase 6** shipped: real `worker.sh` + Claude CLI on VM, `RetrospectiveStage` + MAF OpenAI `gpt-4o-mini`.
+- **NATS cutover (PR #5)**: file-based `InboxWatcher` retired. Every stage transition publishes a `RunEvent` to the `FARMER_RUNS` JetStream stream; run artifacts upload to the `farmer-runs-out` ObjectStore bucket. See [ADR-010](./docs/adr/adr-010-nats-messaging-cutover.md).
+- **Phase 7 retry driver (PR #8)**: opt-in retry via `RetryPolicy` on the `/trigger` body. Driver loops up to `max_attempts` on configured verdicts; each retry gets a synthetic `0-feedback.md` prompt with the prior attempt's `ReviewVerdict.Findings` + `Suggestions`. Chain linked via `parent_run_id`. See [ADR-011](./docs/adr/adr-011-retry-driver.md).
+- **Tests**: 126 green (123 unit + 3 integration with NatsServerFixture).
 
 ## The plan file for the active session
 
-Plans live at `C:\Users\derek\.claude\plans\goofy-knitting-valley.md` (outside the repo — session artifact, not tracked in git). It's the working plan for Phase 6 including the OpenAI pivot notes. If the file is stale relative to committed reality (commits landed that aren't in the plan, or vice versa), the commit log is authoritative.
+Plans live at `C:\Users\Derek\.claude\plans\robust-forging-iverson.md` (outside the repo -- session artifact, not tracked in git). The commit log is authoritative when the plan file disagrees.
 
 ## Runtime directory (NOT in git)
 
-Runtime state lives at `D:\work\planning-runtime\`, deliberately outside the repo. See [ADR-001](./docs/adr/adr-001-externalized-runtime.md) for why. Structure:
+Runtime state lives at `C:\work\iso\planning-runtime\`, deliberately outside the repo. Path is configurable via `Farmer:Paths` in `appsettings.Development.json`. Structure:
 
 ```
-D:\work\planning-runtime\
+C:\work\iso\planning-runtime\
 ├── data\sample-plans\     ← worker inputs (copied from repo data/sample-plans/)
-├── inbox\                 ← drop *.json here to trigger a run
 ├── runs\{run_id}\         ← immutable after completion, one dir per run
+├── nats\                  ← JetStream store_dir (FARMER_RUNS stream + farmer-runs-out bucket)
 ├── outbox\
 ├── qa\
 ```
 
-A successful Phase 5 verification run is preserved at `runs\run-20260411-030920-a2b2e2\` — don't delete it, it's the reference for "what a 7/7 green run looks like".
-
-## Registered ports (portmap at D:\work\start\portmap)
+## Registered ports
 
 | Service | Port | Status |
 |---|---|---|
-| `farmer/api` | 5100 | dotnet, HTTP |
-| `farmer/aspire-dashboard` | 18888 | docker, HTTP |
-| `farmer/aspire-otlp` | 18889 | docker, gRPC OTLP |
-
-Docker keeps the Aspire Dashboard container running across sessions. If you see `aspire-dashboard Up X days` in `docker ps`, leave it alone.
+| `farmer/api` | 5100 | dotnet, HTTP (`scripts/dev-run.ps1`) |
+| `nats-server` | 4222 | NATS core (`infra/start-nats.ps1`) |
+| `nats-monitoring` | 8222 | NATS HTTP monitoring |
+| `jaeger/otlp-grpc` | 4317 | Jaeger OTLP ingest (`infra/start-jaeger.ps1`) |
+| `jaeger/ui` | 16686 | Jaeger UI (http://localhost:16686) |
 
 ## Common gotchas
 
@@ -68,28 +63,44 @@ Docker keeps the Aspire Dashboard container running across sessions. If you see 
 ## Build + test + run
 
 ```powershell
-cd D:\work\planning\src
-dotnet build                # expect clean
-dotnet test                 # expect 110+ green (varies per phase)
+cd C:\work\iso\planning
 
-cd Farmer.Host
-dotnet run                  # binds http://localhost:5100, starts InboxWatcher
+# Build + test
+dotnet build src\Farmer.sln                # expect clean, 0 warnings
+dotnet test src\Farmer.sln                 # expect 126 green (123 unit + 3 integration)
 
-# in another window:
-copy D:\work\planning\scripts\demo\sample-request.json `
-  D:\work\planning-runtime\inbox\hello.json
-# then watch http://localhost:18888 for traces
+# Start infra (idempotent; no-ops if already listening)
+.\infra\start-nats.ps1                     # nats-server on :4222/:8222
+.\infra\start-jaeger.ps1                   # jaeger on :4317/:16686 (downloads on first run)
+
+# Start Farmer.Host (uses appsettings.Development.json: local paths + NATS + Jaeger)
+.\scripts\dev-run.ps1                      # binds http://localhost:5100
+
+# In a second window -- trigger a run + see where to look:
+.\infra\Farmer.SmokeTrace.ps1              # fake-mode 7/7 green, prints Jaeger URL + NATS stats
+.\infra\Farmer.SmokeTrace.ps1 -WorkerMode real   # real Claude CLI (~5-20 min)
+
+# Or manual curl:
+curl.exe -X POST -H "Content-Type: application/json" `
+  --data-binary "@scripts\demo\sample-request.json" `
+  http://localhost:5100/trigger
+
+# With retry:
+curl.exe -X POST -H "Content-Type: application/json" -d '{
+  "work_request_name": "react-grid-component",
+  "worker_mode": "fake",
+  "retry_policy": { "enabled": true, "max_attempts": 2, "retry_on_verdicts": ["Retry"] }
+}' http://localhost:5100/trigger
 ```
 
 ## Key read order if you're picking this up cold
 
-1. [README.md](./README.md) — overall architecture and status
-2. This file — session-level gotchas
-3. [docs/adr/README.md](./docs/adr/README.md) — load-bearing design decisions
-4. [docs/phase5-pattern.md](./docs/phase5-pattern.md) — Phase 5 invariants (filesystem as truth, anti-drift)
-5. [docs/phase5-build-log.md](./docs/phase5-build-log.md) — what Phase 5 actually shipped, including the retro on Bugs 1 + 2
-6. `git log --oneline` on the active branch — source of truth for what's committed
-7. The plan file at `C:\Users\derek\.claude\plans\goofy-knitting-valley.md` — current working plan if it exists and isn't stale
+1. [README.md](./README.md) -- overall architecture and status
+2. This file -- session-level gotchas
+3. [docs/adr/README.md](./docs/adr/README.md) -- load-bearing design decisions (ADR-010 NATS cutover, ADR-011 retry driver are the newest)
+4. [docs/phase5-pattern.md](./docs/phase5-pattern.md) -- Phase 5 invariants (filesystem as truth, anti-drift)
+5. `git log --oneline -20` on `main` -- source of truth for what's committed
+6. The plan file at `C:\Users\Derek\.claude\plans\robust-forging-iverson.md` -- current working plan if it exists and isn't stale
 
 ## User collaboration notes
 
