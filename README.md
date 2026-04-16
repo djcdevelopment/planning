@@ -71,7 +71,7 @@ dotnet build src\Farmer.sln
 dotnet test src\Farmer.sln
 ```
 
-**Expected:** 107+ tests green on `net9.0`.
+**Expected:** 131 tests green on `net9.0` (128 unit + 3 integration).
 
 ## Run the demo (NATS cutover, verified)
 
@@ -121,7 +121,7 @@ C:\work\iso\planning\        ← this repo (the engine)
 │   ├── Farmer.Agents\       ← Microsoft Agent Framework surface (retrospective)
 │   ├── Farmer.Messaging\    ← NATS JetStream + ObjectStore; DI-injected event publisher + artifact store
 │   ├── Farmer.Worker\       ← VM-side worker scripts + CLAUDE.md
-│   └── Farmer.Tests\        ← xUnit tests (126 on net9, incl. 3 integration)
+│   └── Farmer.Tests\        ← xUnit tests (131 on net9, incl. 3 integration)
 ├── docs\
 │   └── adr\                 ← Architecture Decision Records (ADR-010 NATS cutover, ADR-011 retry driver)
 ├── infra\                   ← nats.conf, jaeger.yaml, start-*.ps1
@@ -158,6 +158,8 @@ C:\work\iso\planning-runtime\  ← runtime state, NOT in git (configurable, see 
 | #6 | ADR-010 + README + integration tests | merged 2026-04-15 |
 | #7 | worker_mode contract + Farmer.SmokeTrace.ps1 | merged 2026-04-15 |
 | #8 | Phase 7: opt-in retry driver with feedback injection | merged 2026-04-15 |
+| #9 | Cleanup: ADR-011, shared test helpers, Phase 7 docs | merged 2026-04-15 |
+| #10 | Release reserved VM in RunWorkflow finally block | merged 2026-04-15 |
 
 `claude/phase5-otel-api` was a parallel Phase 5 implementation from a different agent; we cherry-picked `WorkflowPipelineFactory` (see [ADR-004](./docs/adr/adr-004-workflow-pipeline-factory.md)). Don't merge the rest — it's a different architecture.
 
