@@ -49,6 +49,21 @@ public sealed class LoadPromptsStage : IWorkflowStage
             });
         }
 
+        // Retry feedback injection: when the caller populated RunRequest.Feedback
+        // (the retry driver does this on attempt > 1), prepend it as a synthetic
+        // prompt #0. The VM's CLAUDE.md tells Claude that a 0-indexed prompt is
+        // reviewer feedback; worker.sh picks it up because its find pattern
+        // `[0-9]*-*.md` includes 0-prefixed files, sorted numerically.
+        if (!string.IsNullOrWhiteSpace(state.RunRequest?.Feedback))
+        {
+            prompts.Insert(0, new PromptFile
+            {
+                Order = 0,
+                Filename = "0-feedback.md",
+                Content = state.RunRequest.Feedback,
+            });
+        }
+
         // Worker mode precedence: per-request override > config default > "real" as the
         // final fallback. worker.sh on the VM reads `worker_mode` from task-packet.json.
         var workerMode = state.RunRequest?.WorkerMode
@@ -61,6 +76,10 @@ public sealed class LoadPromptsStage : IWorkflowStage
             BranchName = $"{state.Vm?.Name ?? "local"}-{state.WorkRequestName}",
             Prompts = prompts,
             WorkerMode = workerMode,
+            // Mirror the feedback onto the packet for observability; worker.sh ignores
+            // this field today (it reads feedback as prompt #0), but having it here
+            // makes "was this a retry?" obvious from task-packet.json alone.
+            Feedback = state.RunRequest?.Feedback,
         };
 
         state.TaskPacket = taskPacket;
