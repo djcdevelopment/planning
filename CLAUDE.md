@@ -15,7 +15,8 @@ Everything below is merged to `main`.
 - **NATS cutover (PR #5)**: file-based `InboxWatcher` retired. Every stage transition publishes a `RunEvent` to the `FARMER_RUNS` JetStream stream; run artifacts upload to the `farmer-runs-out` ObjectStore bucket. See [ADR-010](./docs/adr/adr-010-nats-messaging-cutover.md).
 - **Phase 7 retry driver (PR #8)**: opt-in retry via `RetryPolicy` on the `/trigger` body. Driver loops up to `max_attempts` on configured verdicts; each retry gets a synthetic `0-feedback.md` prompt with the prior attempt's `ReviewVerdict.Findings` + `Suggestions`. Chain linked via `parent_run_id`. See [ADR-011](./docs/adr/adr-011-retry-driver.md).
 - **VM release fix (PR #10)**: `RunWorkflow.ExecuteAsync` now releases the reserved VM in a `finally` block. Before this, `IVmManager.ReleaseAsync` was never called by anything; in-process retry chains failed at attempt 2's ReserveVm. See [docs/session-retro-2026-04-15.md](./docs/session-retro-2026-04-15.md).
-- **Tests**: 131 green (128 unit + 3 integration with NatsServerFixture).
+- **IWorkflowRunner seam + real-Retry demo (PR #12)**: `RetryDriver` now depends on an `IWorkflowRunner` interface so its loop is testable (2 integration tests with a `FakeWorkflowRunner`). Also restored cost-report persistence that PR #8 accidentally dropped. New `WORKER_MODE=fake-bad` produces adversarial canned output on the first attempt and clean output on the retry -- the loop fires on real `Retry`/`Reject` verdicts instead of a contrived `retry_on_verdicts: ["Accept"]`. See [docs/retry-demo-2026-04-16.md](./docs/retry-demo-2026-04-16.md).
+- **Tests**: 133 green (128 unit + 5 integration with NatsServerFixture).
 
 ## The plan file for the active session
 
@@ -68,13 +69,17 @@ cd C:\work\iso\planning
 
 # Build + test
 dotnet build src\Farmer.sln                # expect clean, 0 warnings
-dotnet test src\Farmer.sln                 # expect 131 green (128 unit + 3 integration)
+dotnet test src\Farmer.sln                 # expect 133 green (128 unit + 5 integration)
 
 # Start infra (idempotent; no-ops if already listening)
 .\infra\start-nats.ps1                     # nats-server on :4222/:8222
 .\infra\start-jaeger.ps1                   # jaeger on :4317/:16686 (downloads on first run)
 
+# Optional: verify worker.sh parity between repo and vm-golden
+.\infra\check-worker-parity.ps1            # OK / DRIFT / FAIL; -Deploy auto-fixes drift
+
 # Start Farmer.Host (uses appsettings.Development.json: local paths + NATS + Jaeger)
+# dev-run.ps1 runs the parity check pre-flight; use -SkipWorkerCheck to bypass.
 .\scripts\dev-run.ps1                      # binds http://localhost:5100
 
 # In a second window -- trigger a run + see where to look:
