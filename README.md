@@ -67,6 +67,11 @@ Tracing target: Jaeger v2 (`tools/jaeger.exe`, downloaded via `tools/download-ja
 
 ```powershell
 cd C:\work\iso\planning
+
+# First-time setup: wire up the pre-commit secret scanner (idempotent).
+# Points git at .githooks/ so `infra/check-staged-secrets.ps1` runs on every commit.
+.\scripts\install-githooks.ps1
+
 dotnet build src\Farmer.sln
 dotnet test src\Farmer.sln
 ```

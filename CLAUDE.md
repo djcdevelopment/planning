@@ -67,6 +67,12 @@ C:\work\iso\planning-runtime\
 ```powershell
 cd C:\work\iso\planning
 
+# First-time setup: pre-commit secret scanner (idempotent).
+# Points git at .githooks/ so infra/check-staged-secrets.ps1 runs on every commit.
+# Bypass with `git commit --no-verify` (rare). CI workflow .github/workflows/secrets-scan.yml
+# is the server-side second-line.
+.\scripts\install-githooks.ps1
+
 # Build + test
 dotnet build src\Farmer.sln                # expect clean, 0 warnings
 dotnet test src\Farmer.sln                 # expect 133 green (128 unit + 5 integration)

@@ -1,0 +1,3 @@
+-----BEGIN OPENSSH PRIVATE KEY-----
+synthetic-content-here-not-a-real-key
+-----END OPENSSH PRIVATE KEY-----
