@@ -44,3 +44,6 @@ runs/
 ## Jaeger binary is ~120MB (over GitHub's 100MB file limit).
 ## tools/download-jaeger.ps1 fetches it; start-jaeger.ps1 calls that automatically.
 tools/jaeger.exe
+
+# Temp dev launchers with secrets baked in -- never commit these
+scripts/_dev-run-with-key.ps1
