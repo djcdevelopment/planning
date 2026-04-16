@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Farmer.Core.Config;
 using Farmer.Core.Contracts;
 using Farmer.Core.Models;
+using Farmer.Core.Telemetry;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -90,6 +92,10 @@ public sealed class CollectStage : IWorkflowStage
         _logger.LogInformation("Collected from {Vm}: {FileCount} files changed, summary={HasSummary}",
             vm.Name, manifest.FilesChanged.Count, summary is not null);
 
+        // Reconstruct per-prompt timing spans from worker.sh's JSONL log.
+        // Best-effort: a missing or malformed log doesn't fail the stage.
+        await EmitPromptSpansAsync(vm, state.RunId, ct);
+
         // Persist to run store — manifest doesn't have its own store method,
         // so we update the run status with collection info
         var status = state.ToRunStatus();
@@ -97,5 +103,80 @@ public sealed class CollectStage : IWorkflowStage
         await _runStore.SaveRunStateAsync(status, ct);
 
         return StageResult.Succeeded(Name);
+    }
+
+    /// <summary>
+    /// Reads <c>output/per-prompt-timing.jsonl</c> from the mapped drive and emits
+    /// one back-dated <c>worker.prompt</c> span per line. worker.sh writes the file
+    /// append-only; each line carries ISO-8601 UTC start/end timestamps so Jaeger
+    /// renders the spans inside <c>workflow.stage.Dispatch</c>'s time window. See
+    /// docs/adr/* for the "filesystem first" rationale over emitting OTLP from bash.
+    /// </summary>
+    private async Task EmitPromptSpansAsync(VmConfig vm, string runId, CancellationToken ct)
+    {
+        const string relativePath = "output/per-prompt-timing.jsonl";
+        if (!await _reader.FileExistsAsync(vm.Name, relativePath.Replace('/', Path.DirectorySeparatorChar), ct))
+        {
+            _logger.LogInformation("No per-prompt-timing.jsonl on {Vm}; skipping span reconstruction.", vm.Name);
+            return;
+        }
+
+        string jsonl;
+        try
+        {
+            jsonl = await _reader.ReadFileAsync(vm.Name,
+                relativePath.Replace('/', Path.DirectorySeparatorChar), ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Failed to read per-prompt-timing.jsonl: {Error}", ex.Message);
+            return;
+        }
+
+        var lines = jsonl.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        int emitted = 0;
+        foreach (var line in lines)
+        {
+            PromptTimingEntry? entry;
+            try
+            {
+                entry = JsonSerializer.Deserialize<PromptTimingEntry>(line, JsonOptions);
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning("Skipping malformed per-prompt-timing line: {Error} | {Line}", ex.Message, line);
+                continue;
+            }
+            if (entry is null) continue;
+
+            var tags = new ActivityTagsCollection
+            {
+                { "farmer.run_id",          runId },
+                { "farmer.prompt_index",    entry.PromptIndex },
+                { "farmer.prompt_filename", entry.Filename },
+                { "farmer.worker_mode",     entry.Mode },
+                { "farmer.exit_code",       entry.ExitCode },
+                { "farmer.stdout_bytes",    entry.StdoutBytes },
+                { "farmer.stderr_bytes",    entry.StderrBytes },
+                { "farmer.duration_ms",     entry.DurationMs },
+            };
+
+            // Positional args disambiguate between two overloads that both
+            // match the named-args set; this one is (name, kind, parentCtx, tags, links, startTime).
+            using var activity = FarmerActivitySource.Source.StartActivity(
+                "worker.prompt",
+                ActivityKind.Internal,
+                default(ActivityContext),
+                tags,
+                (IEnumerable<ActivityLink>?)null,
+                entry.StartTs);
+            activity?.SetEndTime(entry.EndTs.UtcDateTime);
+            if (entry.ExitCode != 0)
+                activity?.SetStatus(ActivityStatusCode.Error, $"exit_code={entry.ExitCode}");
+
+            emitted++;
+        }
+
+        _logger.LogInformation("Emitted {Count} worker.prompt spans for {RunId}", emitted, runId);
     }
 }
