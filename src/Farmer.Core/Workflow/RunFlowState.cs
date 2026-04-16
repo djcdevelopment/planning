@@ -33,6 +33,16 @@ public sealed class RunFlowState
     /// </summary>
     public ReviewVerdict? ReviewVerdict { get; set; }
 
+    /// <summary>
+    /// Structured directive suggestions from the retrospective agent. Distinct from
+    /// <see cref="ReviewVerdict.Suggestions"/> (flat strings) -- each item carries
+    /// a scope (Prompts / ClaudeMd / TaskPacket), target, rationale, and suggested
+    /// value. Threaded to FeedbackBuilder so retry prompts can cite specific files
+    /// and changes rather than just general guidance. Empty when the retrospective
+    /// didn't run or the agent produced none.
+    /// </summary>
+    public IReadOnlyList<DirectiveSuggestion> DirectiveSuggestions { get; set; } = Array.Empty<DirectiveSuggestion>();
+
     public void AdvanceTo(RunPhase phase)
     {
         Phase = phase;

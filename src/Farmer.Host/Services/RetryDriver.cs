@@ -80,7 +80,8 @@ public sealed class RetryDriver
             priorFeedback = FeedbackBuilder.Render(
                 result.ReviewVerdict!,
                 priorAttempt: attempts.Count,
-                priorRunId: priorRunId);
+                priorRunId: priorRunId,
+                directives: result.DirectiveSuggestions);
 
             _log.LogInformation(
                 "Verdict {Verdict} on {RunId}, attempting retry {Attempt}/{Max}",
