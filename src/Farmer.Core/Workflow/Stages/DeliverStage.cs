@@ -37,13 +37,22 @@ public sealed class DeliverStage : IWorkflowStage
         var vm = state.Vm;
         var vmName = vm.Name;
 
-        // Ensure directories exist on VM
-        var mkdirResult = await _ssh.ExecuteAsync(vmName,
-            $"mkdir -p {RunDirectoryLayout.VmPlansDir(vm)} {RunDirectoryLayout.VmCommsDir(vm)} {RunDirectoryLayout.VmOutputDir(vm)}",
+        // Wipe + recreate plans/ and output/ on the VM so leftover files from prior
+        // runs (stale prompts, prior manifest.json, prior per-prompt-timing.jsonl)
+        // don't pollute this run. .comms/ is intentionally preserved -- HeartbeatMiddleware
+        // reads progress.md from there during execution and worker.sh overwrites the
+        // file on its first write_progress call. worker.sh itself lives at
+        // ~/projects/worker.sh, sibling to plans/output -- not wiped (parity check
+        // from PR #13 handles drift detection).
+        var plans  = RunDirectoryLayout.VmPlansDir(vm);
+        var comms  = RunDirectoryLayout.VmCommsDir(vm);
+        var output = RunDirectoryLayout.VmOutputDir(vm);
+        var prepResult = await _ssh.ExecuteAsync(vmName,
+            $"rm -rf {plans} {output} && mkdir -p {plans} {comms} {output}",
             ct: ct);
 
-        if (!mkdirResult.Success)
-            return StageResult.Failed(Name, $"Failed to create directories on VM: {mkdirResult.StdErr}");
+        if (!prepResult.Success)
+            return StageResult.Failed(Name, $"Failed to prepare directories on VM: {prepResult.StdErr}");
 
         // Upload each prompt file
         foreach (var prompt in state.TaskPacket.Prompts)
