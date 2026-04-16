@@ -71,7 +71,7 @@ dotnet build src\Farmer.sln
 dotnet test src\Farmer.sln
 ```
 
-**Expected:** 131 tests green on `net9.0` (128 unit + 3 integration).
+**Expected:** 133 tests green on `net9.0` (128 unit + 5 integration).
 
 ## Run the demo (NATS cutover, verified)
 
@@ -101,14 +101,18 @@ Expected `/trigger` response shape: `{ "runId": "...", "success": true, "finalPh
 ### Retry (Phase 7)
 
 ```powershell
+# Real-Retry demo: fake-bad produces BUILD FAILED on attempt 1, clean output on
+# the retry (detected via task-packet.feedback). gpt-4o-mini verdicts Reject on
+# attempt 1 and Accept on attempt 2 -- the loop fires on a real verdict, not a
+# contrived retry_on_verdicts: ["Accept"] config.
 curl.exe -X POST -H "Content-Type: application/json" -d '{
   "work_request_name": "react-grid-component",
-  "worker_mode": "fake",
-  "retry_policy": { "enabled": true, "max_attempts": 2, "retry_on_verdicts": ["Retry"] }
+  "worker_mode": "fake-bad",
+  "retry_policy": { "enabled": true, "max_attempts": 2, "retry_on_verdicts": ["Retry","Reject"] }
 }' http://localhost:5100/trigger
 ```
 
-When the retrospective verdict is in `retry_on_verdicts`, the driver loops: each retry gets a synthetic `0-feedback.md` prompt with the prior attempt's findings injected. The chain is linked via `parent_run_id`. Without an OpenAI key, retrospective AutoPasses (null verdict, no retry); with a key, the verdict drives the loop. See [ADR-011](./docs/adr/adr-011-retry-driver.md).
+When the retrospective verdict is in `retry_on_verdicts`, the driver loops: each retry gets a synthetic `0-feedback.md` prompt with the prior attempt's findings injected. The chain is linked via `parent_run_id`. Without an OpenAI key, retrospective AutoPasses (null verdict, no retry); with a key, the verdict drives the loop. See [ADR-011](./docs/adr/adr-011-retry-driver.md) and [docs/retry-demo-2026-04-16.md](./docs/retry-demo-2026-04-16.md) for the full receipt.
 
 ## Directory layout
 
@@ -121,7 +125,7 @@ C:\work\iso\planning\        ← this repo (the engine)
 │   ├── Farmer.Agents\       ← Microsoft Agent Framework surface (retrospective)
 │   ├── Farmer.Messaging\    ← NATS JetStream + ObjectStore; DI-injected event publisher + artifact store
 │   ├── Farmer.Worker\       ← VM-side worker scripts + CLAUDE.md
-│   └── Farmer.Tests\        ← xUnit tests (131 on net9, incl. 3 integration)
+│   └── Farmer.Tests\        ← xUnit tests (133 on net9, incl. 5 integration)
 ├── docs\
 │   └── adr\                 ← Architecture Decision Records (ADR-010 NATS cutover, ADR-011 retry driver)
 ├── infra\                   ← nats.conf, jaeger.yaml, start-*.ps1
@@ -160,6 +164,8 @@ C:\work\iso\planning-runtime\  ← runtime state, NOT in git (configurable, see 
 | #8 | Phase 7: opt-in retry driver with feedback injection | merged 2026-04-15 |
 | #9 | Cleanup: ADR-011, shared test helpers, Phase 7 docs | merged 2026-04-15 |
 | #10 | Release reserved VM in RunWorkflow finally block | merged 2026-04-15 |
+| #11 | docs: session retrospective 2026-04-15 | merged 2026-04-15 |
+| #12 | IWorkflowRunner seam + real-Retry demo (fake-bad mode) | merged 2026-04-16 |
 
 `claude/phase5-otel-api` was a parallel Phase 5 implementation from a different agent; we cherry-picked `WorkflowPipelineFactory` (see [ADR-004](./docs/adr/adr-004-workflow-pipeline-factory.md)). Don't merge the rest — it's a different architecture.
 
