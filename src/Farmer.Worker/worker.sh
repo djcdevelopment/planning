@@ -241,12 +241,24 @@ main() {
 
   write_progress "executing" "Found $PROMPT_TOTAL prompts, starting execution"
 
+  # Per-prompt timing log. CollectStage on the host reconstructs these into
+  # OTel spans back-dated to the ISO-8601 timestamps below so the Jaeger
+  # waterfall shows per-prompt detail inside workflow.stage.Dispatch instead
+  # of one opaque slab.
+  PROMPT_TIMING_FILE="${OUTPUT_DIR}/per-prompt-timing.jsonl"
+  : > "$PROMPT_TIMING_FILE"
+
   # Run each prompt
   for prompt_name in "${PROMPTS[@]}"; do
     PROMPT_INDEX=$((PROMPT_INDEX + 1))
     local prompt_path="${PLANS_DIR}/${prompt_name}"
 
     write_progress "executing" "Running prompt $PROMPT_INDEX/$PROMPT_TOTAL: $prompt_name"
+
+    # Millisecond-precision UTC timestamps; GNU date on Ubuntu 24.04 supports %3N.
+    local prompt_start_ts prompt_start_epoch_ms
+    prompt_start_ts=$(date -u '+%Y-%m-%dT%H:%M:%S.%3NZ')
+    prompt_start_epoch_ms=$(($(date +%s%N) / 1000000))
 
     local exit_code=0
     if [ "$WORKER_MODE" = "fake" ]; then
@@ -264,6 +276,28 @@ main() {
     else
       run_claude_real "$prompt_path" || exit_code=$?
     fi
+
+    local prompt_end_ts prompt_end_epoch_ms duration_ms stdout_bytes stderr_bytes
+    prompt_end_ts=$(date -u '+%Y-%m-%dT%H:%M:%S.%3NZ')
+    prompt_end_epoch_ms=$(($(date +%s%N) / 1000000))
+    duration_ms=$((prompt_end_epoch_ms - prompt_start_epoch_ms))
+    stdout_bytes=$(stat -c '%s' "${OUTPUT_DIR}/prompt-${PROMPT_INDEX}-stdout.txt" 2>/dev/null || echo 0)
+    stderr_bytes=$(stat -c '%s' "${OUTPUT_DIR}/prompt-${PROMPT_INDEX}-stderr.txt" 2>/dev/null || echo 0)
+
+    # One JSONL line per prompt. jq builds it so the JSON is always well-formed
+    # even if a filename contains spaces or quotes.
+    jq -nc \
+      --argjson prompt_index  "$PROMPT_INDEX" \
+      --arg     filename      "$prompt_name" \
+      --arg     mode          "$WORKER_MODE" \
+      --arg     start_ts      "$prompt_start_ts" \
+      --arg     end_ts        "$prompt_end_ts" \
+      --argjson duration_ms   "$duration_ms" \
+      --argjson exit_code     "$exit_code" \
+      --argjson stdout_bytes  "$stdout_bytes" \
+      --argjson stderr_bytes  "$stderr_bytes" \
+      '{prompt_index:$prompt_index, filename:$filename, mode:$mode, start_ts:$start_ts, end_ts:$end_ts, duration_ms:$duration_ms, exit_code:$exit_code, stdout_bytes:$stdout_bytes, stderr_bytes:$stderr_bytes}' \
+      >> "$PROMPT_TIMING_FILE"
 
     if [ "$exit_code" -eq 0 ]; then
       PROMPT_RESULTS+=("$prompt_name: success (exit=$exit_code)")
