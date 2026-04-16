@@ -54,6 +54,9 @@ builder.Services.AddFarmerMessaging(builder.Configuration);
 // Builds (RunWorkflow, CostTrackingMiddleware) per call. RunWorkflow is no
 // longer a singleton because the cost tracker it composes must be per-run.
 builder.Services.AddSingleton<WorkflowPipelineFactory>();
+// IWorkflowRunner is the RetryDriver's seam against the workflow. Production wraps
+// the factory + persists the cost report; tests can swap in a fake (see ADR / PR body).
+builder.Services.AddSingleton<IWorkflowRunner, PipelineWorkflowRunner>();
 
 // --- Background services ---
 builder.Services.AddSingleton<RunDirectoryFactory>();
