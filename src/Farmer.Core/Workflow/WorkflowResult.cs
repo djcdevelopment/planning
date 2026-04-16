@@ -14,6 +14,14 @@ public sealed class WorkflowResult
     public DateTimeOffset CompletedAt { get; set; } = DateTimeOffset.UtcNow;
     public double DurationSeconds => (CompletedAt - StartedAt).TotalSeconds;
 
+    /// <summary>
+    /// Review verdict from RetrospectiveStage, if the pipeline reached it and the
+    /// retrospective agent returned a verdict. Null when the retrospective stage
+    /// didn't run (earlier failure) or the agent AutoPassed (no OpenAI key). The
+    /// retry driver uses this to decide whether to loop again.
+    /// </summary>
+    public ReviewVerdict? ReviewVerdict { get; set; }
+
     public static WorkflowResult FromState(RunFlowState state, bool success, string? error = null) => new()
     {
         RunId = state.RunId,
@@ -22,6 +30,7 @@ public sealed class WorkflowResult
         Error = error ?? state.LastError,
         Attempt = state.Attempt,
         StagesCompleted = new List<string>(state.StagesCompleted),
-        StartedAt = state.StartedAt
+        StartedAt = state.StartedAt,
+        ReviewVerdict = state.ReviewVerdict,
     };
 }
