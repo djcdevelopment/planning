@@ -61,10 +61,22 @@ public class RetryDriverTests : IClassFixture<NatsServerFixture>, IAsyncDisposab
     [Fact]
     public async Task Retries_once_on_Retry_verdict_then_stops_on_Accept()
     {
-        // Seed two attempts: first verdicts Retry, second verdicts Accept.
+        // Seed two attempts: first verdicts Retry with structured directives;
+        // second verdicts Accept. We assert attempt 2's feedback carries both
+        // the plain-string suggestions and the structured-directive section.
+        var directives = new List<DirectiveSuggestion>
+        {
+            new()
+            {
+                Scope = DirectiveScope.Prompts,
+                Target = "1-SetupProject.md",
+                SuggestedValue = "Add vitest + react-testing-library install step",
+                Rationale = "Tests were missing from prior attempt",
+            },
+        };
         var runner = new FakeWorkflowRunner(new[]
         {
-            VerdictResult(Verdict.Retry, findings: new() { "Missing tests for DataGrid" }),
+            VerdictResult(Verdict.Retry, findings: new() { "Missing tests for DataGrid" }, directives: directives),
             VerdictResult(Verdict.Accept),
         });
 
@@ -96,6 +108,11 @@ public class RetryDriverTests : IClassFixture<NatsServerFixture>, IAsyncDisposab
         Assert.Equal(attempts[0].RunId, req2!.ParentRunId);
         Assert.NotNull(req2.Feedback);
         Assert.Contains("Missing tests for DataGrid", req2.Feedback!);
+        // Structured directive tokens made it through RunFlowState -> WorkflowResult
+        // -> FeedbackBuilder into the retry's 0-feedback.md equivalent.
+        Assert.Contains("## Specific directives", req2.Feedback);
+        Assert.Contains("[Prompts -> 1-SetupProject.md]", req2.Feedback);
+        Assert.Contains("Tests were missing from prior attempt", req2.Feedback);
     }
 
     [Fact]
@@ -134,7 +151,10 @@ public class RetryDriverTests : IClassFixture<NatsServerFixture>, IAsyncDisposab
 
     // --- Helpers ---
 
-    private static WorkflowResult VerdictResult(Verdict v, List<string>? findings = null) => new()
+    private static WorkflowResult VerdictResult(
+        Verdict v,
+        List<string>? findings = null,
+        IReadOnlyList<DirectiveSuggestion>? directives = null) => new()
     {
         Success = true,
         FinalPhase = RunPhase.Complete,
@@ -145,6 +165,7 @@ public class RetryDriverTests : IClassFixture<NatsServerFixture>, IAsyncDisposab
             Findings = findings ?? new List<string>(),
             Suggestions = new List<string>(),
         },
+        DirectiveSuggestions = directives ?? Array.Empty<DirectiveSuggestion>(),
     };
 
     /// <summary>

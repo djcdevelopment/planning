@@ -83,6 +83,7 @@ public sealed class RetrospectiveStage : IWorkflowStage
 
         // Record on the flow state for the final state.json write
         state.ReviewVerdict = result.Verdict;
+        state.DirectiveSuggestions = result.DirectiveSuggestions;
 
         if (result.Verdict is not null)
         {
