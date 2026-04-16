@@ -24,18 +24,23 @@ public sealed class CreateRunStage : IWorkflowStage
             state.TaskId = $"task-{Guid.NewGuid().ToString("N")[..8]}";
         }
 
-        var request = new RunRequest
+        // Respect a pre-populated RunRequest (ExecuteFromDirectoryAsync reads one from
+        // request.json and attaches it before the pipeline starts). Overwriting discards
+        // per-request fields like Source and WorkerMode that the caller deliberately set.
+        if (state.RunRequest is null)
         {
-            RunId = state.RunId,
-            TaskId = state.TaskId,
-            AttemptId = state.Attempt,
-            WorkRequestName = state.WorkRequestName,
-            PromptCount = 0,
-            Source = "api"
-        };
+            state.RunRequest = new RunRequest
+            {
+                RunId = state.RunId,
+                TaskId = state.TaskId,
+                AttemptId = state.Attempt,
+                WorkRequestName = state.WorkRequestName,
+                PromptCount = 0,
+                Source = "api",
+            };
+        }
 
-        state.RunRequest = request;
-        await _runStore.SaveRunRequestAsync(request, ct);
+        await _runStore.SaveRunRequestAsync(state.RunRequest, ct);
         await _runStore.SaveRunStateAsync(state.ToRunStatus(), ct);
 
         return StageResult.Succeeded(Name);
