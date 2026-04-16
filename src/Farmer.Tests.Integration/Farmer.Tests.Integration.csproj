@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.0" />
+    <PackageReference Include="xunit" Version="2.9.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.*" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.*" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="9.0.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Farmer.Core\Farmer.Core.csproj" />
+    <ProjectReference Include="..\Farmer.Messaging\Farmer.Messaging.csproj" />
+  </ItemGroup>
+
+  <!-- Copy the in-repo nats-server.exe next to the test DLL so NatsServerFixture
+       can spawn it without searching up the directory tree. -->
+  <ItemGroup>
+    <None Include="..\..\tools\nats-server.exe" CopyToOutputDirectory="PreserveNewest" Link="nats-server.exe" />
+  </ItemGroup>
+
+</Project>
