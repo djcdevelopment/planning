@@ -1,110 +1,124 @@
 # Farmer
 
-A .NET 8 control plane that orchestrates Claude CLI workers on Hyper-V Ubuntu VMs, with a retrospective agent on the host (via Microsoft Agent Framework + OpenAI) that reviews every run's output. Filesystem-first runtime, OpenTelemetry throughout, inbox-triggered, designed for Azure/.NET developers learning agent orchestration.
+A .NET 9 control plane that orchestrates Claude CLI workers on Hyper-V Ubuntu VMs, with a retrospective agent on the host (via Microsoft Agent Framework + OpenAI) that reviews every run's output. NATS JetStream + ObjectStore for coordination, OpenTelemetry throughout, HTTP-triggered, designed for Azure/.NET developers learning agent orchestration.
 
-**Status:** Phase 6 shipped (real worker + MAF-powered retrospective loop). Phase 5 shipped (externalized runtime, real SSH end-to-end verified). See [docs/](./docs/) and the branch list below.
+**Status:** Phase 6 shipped (real worker + MAF retrospective). **NATS cutover shipped 2026-04-15** (PR #5) — file-based inbox retired, messaging-first. See [ADR-010](./docs/adr/adr-010-nats-messaging-cutover.md), [docs/](./docs/), and the branch list below.
 
 ---
 
 ## The pitch in one paragraph
 
-Drop a JSON file into `D:\work\planning-runtime\inbox\`. A BackgroundService in `Farmer.Host` notices it, creates a new run directory under `runs\{run_id}\`, and walks the workflow: reserve a VM, SCP the prompt files to `~/projects/plans/` on the VM, SSH-execute `worker.sh`, wait for the worker's output on the mapped drive, and finally run a retrospective agent against the result. Every stage is an OpenTelemetry span, every run folder is immutable after completion, every failure is captured as data. If you ever want to know "what did Farmer ask, what did the worker do, what did the reviewer think" — it's all in the run directory, and it's also in Aspire.
+POST a run request to `/trigger` on Farmer.Host. The request runs the 7-stage workflow synchronously: reserve a VM, SCP the prompt files to `~/projects/plans/` on the VM, SSH-execute `worker.sh`, wait for the worker's output on the mapped drive, run a retrospective agent against the result, mirror the whole run directory to NATS ObjectStore. Every stage publishes a `RunEvent` to the durable `FARMER_RUNS` JetStream stream; every stage is an OpenTelemetry span under one traceId from HTTP ingress through retrospective; every run folder is immutable after completion. If you ever want to know "what did Farmer ask, what did the worker do, what did the reviewer think" — it's in the run directory on disk, in the `farmer-runs-out` ObjectStore bucket over the wire, and as a 100+ span waterfall in Jaeger.
 
 ## Architecture at a glance
 
 ```
-inbox/*.json
-    │
-    ▼
-InboxWatcher (host BackgroundService)
-    │
-    ▼
-RunDirectoryFactory  →  runs/{run_id}/request.json
-    │
-    ▼
-RunWorkflow — 7-stage pipeline
-  CreateRun → LoadPrompts → ReserveVm → Deliver → Dispatch → Collect → Retrospective
-                                           │           │         │          │
-                                           │           │         │          └── IRetrospectiveAgent
-                                           │           │         │              (MAF + OpenAI, host)
-                                           │           │         │              writes qa-retro.md
-                                           │           │         │              writes review.json
-                                           │           │         │              writes directive-suggestions.md
-                                           │           │         │
-                                           │           │         └── reads output/manifest.json
-                                           │           │             from mapped drive (O:)
-                                           │           │
-                                           │           └── bash ~/projects/worker.sh {run_id}
-                                           │               (Claude CLI, full dangerous mode)
-                                           │
-                                           └── SCP prompts + task-packet.json
-                                               to ~/projects/plans/
+POST /trigger  ─────────────┐
+                            ▼
+                   RunDirectoryFactory → runs/{run_id}/request.json
+                            │
+                            ▼
+                   RunWorkflow — 7-stage pipeline
+                   CreateRun → LoadPrompts → ReserveVm → Deliver → Dispatch → Collect → Retrospective
+                            │                               │         │         │           │
+                            │                               │         │         │           └── IRetrospectiveAgent
+                            │                               │         │         │               (MAF + OpenAI, host)
+                            │                               │         │         │               writes qa-retro.md
+                            │                               │         │         │               writes review.json
+                            │                               │         │         │               writes directive-suggestions.md
+                            │                               │         │         │
+                            │                               │         │         └── reads output/manifest.json
+                            │                               │         │             from mapped drive (K:)
+                            │                               │         │
+                            │                               │         └── bash ~/projects/worker.sh {run_id}
+                            │                               │             (Claude CLI, full dangerous mode)
+                            │                               │
+                            │                               └── SCP prompts + task-packet.json
+                            │                                   to ~/projects/plans/
+                            │
+                            │  EventingMiddleware + /trigger handler also:
+                            ▼
+                   NATS  ──────┬──────→  FARMER_RUNS stream
+                               │         farmer.events.run.{runId}.{stage}.{status}
+                               │         (one message per stage transition)
+                               │
+                               └──────→  farmer-runs-out ObjectStore bucket
+                                         {runId}/manifest.json, events.jsonl, state.json, result.json, ...
 ```
 
-**Two runtimes, two providers:**
-- **Host** (Windows .NET 8): Farmer.Host + Farmer.Core + Farmer.Agents. The retrospective agent uses Microsoft Agent Framework 1.1.0 + OpenAI provider (stable, `gpt-4o-mini` by default).
-- **VM** (Hyper-V Ubuntu, e.g. `claudefarm2`): Claude CLI in full dangerous mode, no tool allowlist, sandboxed by the VM itself.
+**Three runtimes:**
+- **Host** (Windows .NET 9): Farmer.Host + Farmer.Core + Farmer.Agents + Farmer.Messaging. The retrospective agent uses Microsoft Agent Framework + OpenAI provider (stable, `gpt-4o-mini` by default).
+- **NATS** (same box or LAN-reachable): `nats-server.exe` from `tools/`, JetStream file-backed, runs the `FARMER_RUNS` stream + `farmer-runs-out` bucket. Started via `infra/start-nats.ps1`.
+- **VM** (Hyper-V Ubuntu, e.g. `vm-golden`): Claude CLI in full dangerous mode, no tool allowlist, sandboxed by the VM itself.
+
+Tracing target: Jaeger v2 (`tools/jaeger.exe`, downloaded via `tools/download-jaeger.ps1` on first use). Started via `infra/start-jaeger.ps1`. UI on http://localhost:16686 — every `/trigger` call produces one clickable traceId spanning ~100-130 spans.
 
 ## Prerequisites
 
-- .NET 8 SDK
-- Docker (for Aspire Dashboard — traces/logs/metrics visualization)
-- Hyper-V with at least one Ubuntu VM reachable over SSH
-- SSHFS-Win (or equivalent) mapping the VM's `~/projects/` to a drive letter on the host (e.g., `O:\`)
-- `OPENAI_API_KEY` environment variable for the retrospective agent
-- An unencrypted SSH key at `~/.ssh/id_ed25519` (or configured via `Farmer:SshKeyPath`)
+- .NET 9 SDK
+- Hyper-V with at least one Ubuntu VM reachable over SSH (`vm-golden` in the shipped config)
+- SSHFS-Win (or equivalent) mapping the VM's `~/projects/` to a drive letter on the host (`K:` by default)
+- `OPENAI_API_KEY` environment variable for the retrospective agent (optional: `Farmer:Retrospective:FailureBehavior=AutoPass` is the default, so missing key just skips the LLM call rather than failing the stage)
+- An SSH key at `~/.ssh/id_ed25519` (must have ACL allowing ONLY the running user — OpenSSH on Windows silently falls back to password auth if `CodexSandboxUsers` or similar inherited ACEs are present; fix with `icacls $key /reset; icacls $key /inheritance:r; icacls $key /grant:r "${env:USERNAME}:F"`)
+
+`nats-server.exe` is checked in at `tools/` (17 MB). `jaeger.exe` is larger than GitHub's file limit; `infra/start-jaeger.ps1` auto-invokes `tools/download-jaeger.ps1` on first run.
 
 ## Build and test
 
 ```powershell
-cd D:\work\planning\src
-dotnet build
-dotnet test
+cd C:\work\iso\planning
+dotnet build src\Farmer.sln
+dotnet test src\Farmer.sln
 ```
 
-**Expected:** 110+ tests green across `Farmer.Tests` (the count grows each phase). Build targets `net8.0`.
+**Expected:** 107+ tests green on `net9.0`.
 
-## Run the demo (Phase 6, verified)
-
-Full runbook lives at [scripts/demo/README.md](./scripts/demo/README.md). The short version:
+## Run the demo (NATS cutover, verified)
 
 ```powershell
-# 1. Start Aspire Dashboard (OTLP receiver on 18889, UI on 18888)
-docker run --rm -d --name aspire-dashboard `
-  -p 18888:18888 -p 18889:18889 `
-  -e DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS=true `
-  mcr.microsoft.com/dotnet/aspire-dashboard:9.0
+# 1. Start NATS + Jaeger (idempotent; no-ops if already listening)
+.\infra\start-nats.ps1
+.\infra\start-jaeger.ps1    # fetches jaeger.exe on first run, ~2 minutes
 
 # 2. Start Farmer.Host
-cd D:\work\planning\src\Farmer.Host
-dotnet run
+.\scripts\dev-run.ps1        # uses appsettings.Development.json (C:\work\iso\planning-runtime paths, NATS + OTLP localhost)
 
-# 3. Drop a trigger into the inbox
-copy D:\work\planning\scripts\demo\sample-request.json `
-  D:\work\planning-runtime\inbox\hello.json
+# 3. In a second window — trigger a run
+cd C:\work\iso\planning
+curl.exe -X POST -H "Content-Type: application/json" `
+  --data-binary "@scripts\demo\sample-request.json" `
+  http://localhost:5100/trigger
 
-# 4. Open http://localhost:18888 and watch the workflow.run trace land
+# 4. Observe:
+#    - Jaeger UI → http://localhost:16686 → Service "Farmer" → latest trace
+#    - NATS streams → http://localhost:8222/jsz?streams=true
+#    - Quick CLI summary of the latest trace:
+.\scripts\_waterfall.ps1
 ```
+
+Expected `/trigger` response shape: `{ "runId": "...", "success": true, "finalPhase": "Complete", "stagesCompleted": ["CreateRun","LoadPrompts","ReserveVm","Deliver","Dispatch","Collect","Retrospective"], ... }`. Duration is ~2s with a fake worker, ~5-20 min with a real Claude CLI session.
 
 ## Directory layout
 
 ```
-D:\work\planning\            ← this repo (the engine)
+C:\work\iso\planning\        ← this repo (the engine)
 ├── src\
-│   ├── Farmer.Core\         ← pure engine, no AI deps, stable .NET 8
+│   ├── Farmer.Core\         ← pure engine, no AI/transport deps
 │   ├── Farmer.Tools\        ← SSH/SCP/mapped drive implementations
-│   ├── Farmer.Host\         ← ASP.NET Core host, DI, InboxWatcher
-│   ├── Farmer.Agents\       ← NEW Phase 6: Microsoft Agent Framework surface
+│   ├── Farmer.Host\         ← ASP.NET Core host, DI, /trigger endpoint
+│   ├── Farmer.Agents\       ← Microsoft Agent Framework surface (retrospective)
+│   ├── Farmer.Messaging\    ← NATS JetStream + ObjectStore; DI-injected event publisher + artifact store
 │   ├── Farmer.Worker\       ← VM-side worker scripts + CLAUDE.md
-│   └── Farmer.Tests\        ← xUnit tests
-├── docs\                    ← build logs, architecture docs, ADRs
-│   └── adr\                 ← Architecture Decision Records (NEW)
+│   └── Farmer.Tests\        ← xUnit tests (107+ on net9)
+├── docs\
+│   └── adr\                 ← Architecture Decision Records (ADR-010 = NATS cutover)
+├── infra\                   ← nats.conf, jaeger.yaml, start-*.ps1
+├── tools\                   ← nats-server.exe (in-repo), jaeger.exe (downloaded)
+├── scripts\                 ← dev-run.ps1, _waterfall.ps1, demo runbook
 ├── data\sample-plans\       ← work request templates
-├── scripts\demo\            ← local demo runbook + sample inbox file
 └── README.md                ← you are here
 
-D:\work\planning-runtime\    ← runtime state, NOT in git
-├── inbox\                   ← drop trigger files here
+C:\work\iso\planning-runtime\  ← runtime state, NOT in git (configurable, see Farmer:Paths)
 ├── runs\{run_id}\           ← one dir per run, immutable after completion
 │   ├── request.json
 │   ├── state.json
@@ -113,24 +127,24 @@ D:\work\planning-runtime\    ← runtime state, NOT in git
 │   ├── cost-report.json
 │   ├── logs\
 │   └── artifacts\
+├── nats\                    ← JetStream store_dir (FARMER_RUNS stream + farmer-runs-out bucket on disk)
+├── data\sample-plans\       ← worker inputs (copied from repo)
 ├── outbox\
-├── qa\
-└── data\sample-plans\       ← worker inputs (copied from repo)
+└── qa\
 ```
 
 ## Branches
 
-Phase work lives on feature branches; nothing has been merged to `main` yet beyond the initial scaffold and the stewardship notice.
+`main` is the source of truth; feature branches open PRs, merge, and get deleted on the way in.
 
-| Branch | What's on it |
-|---|---|
-| `main` | Initial scaffold + license notice. Phase 5/6 work not yet merged. |
-| `claude/phase5-externalized-runtime` | The architectural Phase 5 work (7 commits) |
-| `claude/phase5-end-to-end-verification` | Phase 5 + real SSH end-to-end verified (5 more commits on top) |
-| `claude/phase6-retrospective-loop` | **Current active branch.** Phase 6 complete: real worker + MAF OpenAI retrospective agent + 9 ADRs |
-| `claude/phase5-otel-api` | Parallel Phase 5 work from another agent (different architecture, see ADR-005 for context) |
+| PR | Title | Status |
+|---|---|---|
+| #2 | Phase 6 retrospective loop | merged |
+| #3 | Phase 5 externalized runtime | merged |
+| #4 | Phase 5 end-to-end verification | merged |
+| #5 | NATS messaging cutover — file-based inbox retired | merged 2026-04-15 |
 
-Merging any of these to `main` is deferred until Phase 6 ships end-to-end.
+`claude/phase5-otel-api` was a parallel Phase 5 implementation from a different agent; we cherry-picked `WorkflowPipelineFactory` (see [ADR-004](./docs/adr/adr-004-workflow-pipeline-factory.md)). Don't merge the rest — it's a different architecture.
 
 ## Architecture Diagrams
 
@@ -153,11 +167,13 @@ Visual overviews of the system (SVG, open in any browser):
 ## Observability
 
 Every run gets:
-- **Traces** — `workflow.run` (root) + `workflow.stage.*` (children) under the `Farmer` ActivitySource. Phase 6 adds `invoke_agent FarmerRetrospectiveAgent` + `chat gpt-4o-mini` under `Experimental.Microsoft.Agents.AI`.
+- **Traces** — `POST /trigger` (root) → `workflow.run` → `workflow.stage.*` under the `Farmer` ActivitySource, joined by `NATS.Net` client spans (`farmer.events publish`, `$JS.API publish`, `$O.farmer-runs-out publish`) and MAF's `Experimental.Microsoft.Agents.AI` spans for the retrospective. A real-Claude run produces ~130 spans under a single traceId from HTTP ingress to artifact upload.
 - **Structured logs** — every log line has `RunId` and `StageName` as fields, correlated to the active span.
-- **Metrics** — `farmer.runs.started/completed/failed`, `farmer.stage.duration`, Phase 6 adds `farmer.qa.risk_score` histogram and `farmer.qa.verdicts_total` counter tagged by verdict.
+- **Metrics** — `farmer.runs.started/completed/failed`, `farmer.stage.duration`, `farmer.qa.risk_score` histogram, `farmer.qa.verdicts_total` counter tagged by verdict.
+- **JetStream replay** — `FARMER_RUNS` durably holds 24h of stage events; `nats sub 'farmer.events.run.>'` watches every run in real time without touching Farmer.Host.
+- **ObjectStore** — `farmer-runs-out` bucket holds every run's artifacts keyed by `{runId}/{filename}`. Accessible from any NATS client on the LAN, no mapped drive needed.
 
-Open http://localhost:18888 with Aspire Dashboard running and every run shows up live.
+Open http://localhost:16686 (Jaeger) and http://localhost:8222 (NATS monitoring) to see both live.
 
 ## Working on this
 
