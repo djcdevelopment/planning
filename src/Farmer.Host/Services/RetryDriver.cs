@@ -18,7 +18,7 @@ namespace Farmer.Host.Services;
 public sealed class RetryDriver
 {
     private readonly RunDirectoryFactory _dirFactory;
-    private readonly WorkflowPipelineFactory _pipelineFactory;
+    private readonly IWorkflowRunner _runner;
     private readonly IRunArtifactStore _artifactStore;
     private readonly ILogger<RetryDriver> _log;
 
@@ -29,12 +29,12 @@ public sealed class RetryDriver
 
     public RetryDriver(
         RunDirectoryFactory dirFactory,
-        WorkflowPipelineFactory pipelineFactory,
+        IWorkflowRunner runner,
         IRunArtifactStore artifactStore,
         ILogger<RetryDriver> log)
     {
         _dirFactory = dirFactory;
-        _pipelineFactory = pipelineFactory;
+        _runner = runner;
         _artifactStore = artifactStore;
         _log = log;
     }
@@ -52,8 +52,7 @@ public sealed class RetryDriver
             var runDir = await _dirFactory.CreateFromInboxFileAsync(
                 triggerTempFile, ct, priorRunId, priorFeedback, attemptNumber);
 
-            var (workflow, costTracker) = _pipelineFactory.Create();
-            var result = await workflow.ExecuteFromDirectoryAsync(runDir, ct);
+            var result = await _runner.ExecuteFromDirectoryAsync(runDir, ct);
             attempts.Add(result);
 
             await UploadRunArtifactsAsync(result.RunId, runDir, ct);
