@@ -58,10 +58,10 @@ public class RunDirectoryLayoutTests
     [Fact]
     public void RunDirPaths_IncludeRunId()
     {
-        var runsPath = @"D:\work\planning-runtime\runs";
+        var runsPath = @"C:\work\iso\planning-runtime\runs";
         var runId = "run-001";
 
-        Assert.Equal(@"D:\work\planning-runtime\runs\run-001", RunDirectoryLayout.RunDir(runsPath, runId));
+        Assert.Equal(@"C:\work\iso\planning-runtime\runs\run-001", RunDirectoryLayout.RunDir(runsPath, runId));
         Assert.Contains("request.json", RunDirectoryLayout.RunRequestFile(runsPath, runId));
         Assert.Contains("state.json", RunDirectoryLayout.RunStateFile(runsPath, runId));
         Assert.Contains("events.jsonl", RunDirectoryLayout.RunEventsFile(runsPath, runId));
@@ -74,7 +74,7 @@ public class RunDirectoryLayoutTests
     [Fact]
     public void RunDirPaths_IncludeSubdirs()
     {
-        var runsPath = @"D:\work\planning-runtime\runs";
+        var runsPath = @"C:\work\iso\planning-runtime\runs";
         var runId = "run-001";
 
         Assert.Contains("logs", RunDirectoryLayout.RunLogsDir(runsPath, runId));
