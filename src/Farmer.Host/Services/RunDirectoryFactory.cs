@@ -53,19 +53,29 @@ public sealed class RunDirectoryFactory
         Directory.CreateDirectory(Path.Combine(runDir, "logs"));
         Directory.CreateDirectory(Path.Combine(runDir, "artifacts"));
 
+        // When inline prompts are supplied, work_request_name is optional — it's
+        // only needed for display / metadata. Fall back to a sensible default so
+        // phone-originated requests without a canonical work_request_name still
+        // work end-to-end.
+        var hasInline = trigger.PromptsInline is { Count: > 0 };
+        var workRequestName = string.IsNullOrWhiteSpace(trigger.WorkRequestName)
+            ? (hasInline ? "inline-request" : string.Empty)
+            : trigger.WorkRequestName;
+
         // Build full request from minimal trigger
         var request = new RunRequest
         {
             RunId = runId,
             TaskId = $"task-{Guid.NewGuid().ToString("N")[..8]}",
             AttemptId = attemptNumber,
-            WorkRequestName = trigger.WorkRequestName,
+            WorkRequestName = workRequestName,
             PromptCount = 0,
             Source = trigger.Source ?? "inbox",
             WorkerMode = trigger.WorkerMode,
             RetryPolicy = trigger.RetryPolicy,
             ParentRunId = priorRunId ?? trigger.ParentRunId,
             Feedback = priorFeedback ?? trigger.Feedback,
+            PromptsInline = trigger.PromptsInline,
         };
 
         // Write request.json
@@ -103,4 +113,13 @@ public sealed class InboxTrigger
     /// <summary>Optional markdown feedback to inject as prompt #0. Usually populated by the retry driver.</summary>
     [System.Text.Json.Serialization.JsonPropertyName("feedback")]
     public string? Feedback { get; set; }
+
+    /// <summary>
+    /// Optional inline prompts. When populated, LoadPromptsStage uses these
+    /// directly instead of reading from <c>{SamplePlansPath}/{WorkRequestName}/</c>.
+    /// Intended for phone / browser clients that can't share a filesystem with
+    /// Farmer.Host. See <see cref="InlinePrompt"/>.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonPropertyName("prompts_inline")]
+    public List<InlinePrompt>? PromptsInline { get; set; }
 }

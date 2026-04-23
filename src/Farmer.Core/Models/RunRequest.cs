@@ -61,4 +61,19 @@ public sealed class RunRequest
     /// </summary>
     [JsonPropertyName("feedback")]
     public string? Feedback { get; set; }
+
+    /// <summary>
+    /// Prompts carried inline on the request instead of being read from a
+    /// pre-existing sample-plan directory. When populated, LoadPromptsStage uses
+    /// these directly and skips the disk scan under
+    /// <c>{SamplePlansPath}/{WorkRequestName}/</c>. Intended for clients that
+    /// have no shared filesystem with Farmer.Host (e.g. a phone-originated
+    /// request over a public tunnel).
+    ///
+    /// <see cref="WorkRequestName"/> is still used for display / metadata /
+    /// retrospective context when inline prompts win. If both this and a disk
+    /// directory exist, inline wins.
+    /// </summary>
+    [JsonPropertyName("prompts_inline")]
+    public List<InlinePrompt>? PromptsInline { get; set; }
 }

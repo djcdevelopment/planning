@@ -37,6 +37,76 @@ public class ContractSerializationTests
     }
 
     [Fact]
+    public void RunRequest_Deserializes_WithoutPromptsInline()
+    {
+        // Back-compat: existing /trigger payloads that don't carry prompts_inline
+        // must keep parsing cleanly, with the property null.
+        var json = """{"run_id":"run-1","work_request_name":"demo","source":"api"}""";
+        var req = JsonSerializer.Deserialize<RunRequest>(json, Options)!;
+
+        Assert.Equal("demo", req.WorkRequestName);
+        Assert.Null(req.PromptsInline);
+    }
+
+    [Fact]
+    public void RunRequest_Deserializes_WithPromptsInline()
+    {
+        var json = """
+        {
+          "run_id": "run-1",
+          "work_request_name": "live-demo",
+          "prompts_inline": [
+            { "filename": "1-Build.md", "content": "Write a Python function that prints hello world" },
+            { "filename": "2-Review.md", "content": "Lint the script" }
+          ]
+        }
+        """;
+
+        var req = JsonSerializer.Deserialize<RunRequest>(json, Options)!;
+
+        Assert.NotNull(req.PromptsInline);
+        Assert.Equal(2, req.PromptsInline!.Count);
+        Assert.Equal("1-Build.md", req.PromptsInline[0].Filename);
+        Assert.Equal("Write a Python function that prints hello world", req.PromptsInline[0].Content);
+        Assert.Equal("live-demo", req.WorkRequestName);
+    }
+
+    [Fact]
+    public void RunRequest_PromptsInline_RoundTrips()
+    {
+        var original = new RunRequest
+        {
+            RunId = "run-1",
+            WorkRequestName = "live-demo",
+            PromptsInline =
+            [
+                new InlinePrompt { Filename = "1-Build.md", Content = "do the thing" },
+            ],
+        };
+
+        var json = JsonSerializer.Serialize(original, Options);
+        var roundTripped = JsonSerializer.Deserialize<RunRequest>(json, Options)!;
+
+        Assert.Contains("prompts_inline", json);
+        Assert.NotNull(roundTripped.PromptsInline);
+        Assert.Single(roundTripped.PromptsInline!);
+        Assert.Equal("1-Build.md", roundTripped.PromptsInline![0].Filename);
+        Assert.Equal("do the thing", roundTripped.PromptsInline[0].Content);
+    }
+
+    [Fact]
+    public void InlinePrompt_UsesSnakeCaseJsonNames()
+    {
+        // Both fields are already lowercase so the check is mostly a
+        // "these names stay stable" guard, but make the wire contract explicit.
+        var p = new InlinePrompt { Filename = "x.md", Content = "y" };
+        var json = JsonSerializer.Serialize(p, Options);
+
+        Assert.Contains("\"filename\"", json);
+        Assert.Contains("\"content\"", json);
+    }
+
+    [Fact]
     public void TaskPacket_RoundTrips_WithPrompts()
     {
         var original = new TaskPacket

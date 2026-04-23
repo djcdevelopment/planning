@@ -68,6 +68,21 @@ builder.Services.AddSingleton<RetryDriver>();
 // InboxWatcher was the file-based ingress. Retired — NATS events + HTTP /trigger
 // are the only supported paths now. See docs/adr/011-nats-cutover.md.
 
+// --- CORS ---
+// Permissive dev policy so browser clients hitting the cloudflared tunnel URL
+// (e.g. desire-trace's Azure-hosted page) can POST to /trigger. For Phase Demo
+// the trust model is "friend clicks a button; no PII, single-user". Tighten
+// the allowed origins before exposing this to anything resembling a real user
+// base. See docs/phase-demo-plan.md.
+const string FarmerDevCorsPolicy = "FarmerDevCors";
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(FarmerDevCorsPolicy, policy => policy
+        .AllowAnyOrigin()
+        .AllowAnyMethod()
+        .AllowAnyHeader());
+});
+
 // --- OpenTelemetry ---
 var otelResource = ResourceBuilder.CreateDefault()
     .AddService(telemetrySettings.ServiceName, serviceVersion: "0.1.0");
@@ -98,6 +113,10 @@ builder.Services.AddOpenTelemetry()
     });
 
 var app = builder.Build();
+
+// CORS must run before endpoint mapping so preflight (OPTIONS) and response
+// headers apply to every Map* below.
+app.UseCors(FarmerDevCorsPolicy);
 
 // --- Endpoints ---
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTimeOffset.UtcNow }));
