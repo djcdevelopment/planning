@@ -57,7 +57,7 @@ az containerapp up --name steppe-trace --resource-group steppe-rg --source .
 
 **Two URLs to send:**
 1. The desire-trace page (Azure-hosted, has the Build for real button):
-   `https://steppe-trace.redbush-618197c6.westus2.azurecontainerapps.io/`
+   `https://steppe-trace.proudrock-473a42a9.westus2.azurecontainerapps.io/`
 2. The tunnel URL (for the "Farmer URL" input on that page):
    `https://<something>.trycloudflare.com` — copy from `infra\.tunnel-url.txt`
 
