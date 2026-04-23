@@ -70,6 +70,34 @@ public class MafRetrospectiveAgentTests
     }
 
     [Fact]
+    public void SystemInstructions_Guard_Against_Speculation_On_Empty_Source()
+    {
+        // Phase Demo Stream K — three live rehearsal runs (104056-38a14a,
+        // 085202-b71a9a, 103031-7f0162) had the retro invent explanations
+        // ("unrelated Android project", "run_id mismatch", "prompt/worker
+        // misalignment") when the Source files produced section was empty.
+        // The charter now explicitly forbids that pattern; pin the exact
+        // anti-hallucination phrases so future prompt edits can't silently
+        // drop them.
+        var sys = RetrospectivePrompt.SystemInstructions;
+
+        // Rule #7 — name the "None captured" sentinel so the agent links
+        // its response behavior to the specific user-message cue.
+        Assert.Contains("None captured for this run", sys, StringComparison.Ordinal);
+        Assert.Contains("speculation without evidence", sys, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("caveat on your verdict", sys, StringComparison.OrdinalIgnoreCase);
+
+        // Rule #8 — no invented cross-references.
+        Assert.Contains("Do not invent cross-references", sys, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("quote it verbatim", sys, StringComparison.OrdinalIgnoreCase);
+
+        // Rule #9 — prefer retry + moderate risk over reject + 80+ when
+        // the only problem is missing source.
+        Assert.Contains("neutral wording when evidence is thin", sys, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ambiguous", sys, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void BuildUserMessage_WithSourceFiles_RendersLabeledCodeBlocks()
     {
         var ctx = MakeContext(artifactsDir: null);
