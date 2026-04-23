@@ -37,6 +37,14 @@ RUN_ID="${1:-unknown}"
 PROJECT_ROOT="${WORK_DIR:-${HOME}/projects}"
 PLANS_DIR="${PROJECT_ROOT}/plans"
 OUTPUT_DIR="${PROJECT_ROOT}/output"
+
+# Claude CLI picks up its working directory from the shell that launched it.
+# DispatchStage invokes us from `cd ~/projects` (legacy convention); without
+# this cd, Claude builds in the shared /home/claude/projects/ root and the
+# per-run workspace at $PROJECT_ROOT stays empty — manifest comes back
+# WORKER_NO_CHANGES even though Claude succeeded. See Phase-Demo rehearsal
+# run-20260423-103031-7f0162 for the failure signature.
+cd "$PROJECT_ROOT" || { echo "FATAL: cannot cd to $PROJECT_ROOT" >&2; exit 1; }
 COMMS_DIR="${PROJECT_ROOT}/.comms"
 PROGRESS_FILE="${COMMS_DIR}/worker-progress.md"
 TASK_PACKET_FILE="${PLANS_DIR}/task-packet.json"
