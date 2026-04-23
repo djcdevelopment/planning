@@ -60,7 +60,7 @@ function Invoke-Az {
 # Default: `farmertunnel` + 8 hex chars sourced from the subscription id so
 # repeat runs from the same sub land on the same name (idempotent).
 if ([string]::IsNullOrWhiteSpace($StorageAccount)) {
-    $subJson = Invoke-Az account show -o json
+    $subJson = Invoke-Az account show --output json
     $sub = $subJson | ConvertFrom-Json
     $hash = [System.BitConverter]::ToString(
         [System.Security.Cryptography.SHA256]::Create().ComputeHash(
@@ -76,12 +76,25 @@ if ($StorageAccount.Length -gt 24 -or $StorageAccount -notmatch '^[a-z0-9]+$') {
 
 # --- Resource group --------------------------------------------------------
 Write-Host "Ensuring resource group $ResourceGroup exists in $Location..." -ForegroundColor Cyan
-Invoke-Az group create --name $ResourceGroup --location $Location -o none
+Invoke-Az group create --name $ResourceGroup --location $Location --output none
 
 # --- Storage account -------------------------------------------------------
 Write-Host "Ensuring storage account $StorageAccount exists..." -ForegroundColor Cyan
-$acctJson = & $az storage account show --name $StorageAccount --resource-group $ResourceGroup -o json 2>$null
-if ($LASTEXITCODE -ne 0) {
+# Probe with ErrorAction Continue + explicit $LASTEXITCODE check so the native
+# "resource not found" stderr doesn't trigger $ErrorActionPreference=Stop and
+# bypass the create-on-missing branch.
+$acctJson = $null
+try {
+    $ErrorActionPreference = 'Continue'
+    $acctJson = & $az storage account show --name $StorageAccount --resource-group $ResourceGroup --output json 2>$null
+    $showExit = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+} catch {
+    $showExit = 1
+    $ErrorActionPreference = 'Stop'
+}
+if ($showExit -ne 0) {
+    Write-Host "  (creating -- did not exist)" -ForegroundColor DarkGray
     Invoke-Az storage account create `
         --name $StorageAccount `
         --resource-group $ResourceGroup `
@@ -89,15 +102,15 @@ if ($LASTEXITCODE -ne 0) {
         --sku Standard_LRS `
         --kind StorageV2 `
         --allow-blob-public-access false `
-        -o none
-    $acctJson = Invoke-Az storage account show --name $StorageAccount --resource-group $ResourceGroup -o json
+        --output none
+    $acctJson = Invoke-Az storage account show --name $StorageAccount --resource-group $ResourceGroup --output json
 }
 
 # --- Storage key (for SAS generation) -------------------------------------
 $keysJson = Invoke-Az storage account keys list `
     --account-name $StorageAccount `
     --resource-group $ResourceGroup `
-    -o json
+    --output json
 $keys = $keysJson | ConvertFrom-Json
 $key = $keys[0].value
 
@@ -108,7 +121,7 @@ Invoke-Az storage container create `
     --account-name $StorageAccount `
     --account-key $key `
     --public-access off `
-    -o none
+    --output none
 
 # --- SAS for current.json --------------------------------------------------
 # rwc (read/write/create) on the blob itself so the tunnel script can replace
@@ -125,7 +138,7 @@ $sas = & $az storage blob generate-sas `
     --permissions rcw `
     --expiry $expiry `
     --https-only `
-    -o tsv
+    --output tsv
 if ($LASTEXITCODE -ne 0) {
     throw "az storage blob generate-sas failed"
 }
