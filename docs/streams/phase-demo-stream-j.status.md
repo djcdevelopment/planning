@@ -70,7 +70,7 @@ Concrete deliverables:
   rejection with both slash directions + post-valid-segment traversal, rooted-path rejection,
   malicious run-id rejection, directory-listing rejection.
 
-## [COMPLETE] <sha-after-commit>
+## [COMPLETE] ddf6078
 
 Verification:
 
