@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Farmer.Core.Config;
 using Farmer.Core.Contracts;
+using Farmer.Core.Layout;
 using Farmer.Core.Models;
 using Farmer.Core.Workflow;
 using Farmer.Core.Workflow.Stages;
@@ -24,7 +25,8 @@ public class CollectStageTests
         SshHost = "claudefarm1",
         SshUser = "claude",
         MappedDriveLetter = "N",
-        RemoteProjectPath = "~/projects"
+        RemoteProjectPath = "/home/claude/projects",
+        RemoteRunsRoot = "/home/claude/runs",
     };
 
     private static CollectStage MakeStage(MockMappedDriveReader reader, MockRunStore? store = null)
@@ -34,9 +36,18 @@ public class CollectStageTests
             NullLogger<CollectStage>.Instance);
     }
 
+    /// <summary>
+    /// Reader key that CollectStage will actually ask for, given the per-run
+    /// workspace layout. Keeps the assertions in each test readable by
+    /// delegating the parent-relative walk to production code.
+    /// </summary>
+    private static string ReaderKey(VmConfig vm, string runId, string file) =>
+        RunDirectoryLayout.ReaderPathForRunOutput(vm, runId, file);
+
     [Fact]
     public async Task Succeeds_WhenManifestHasFiles()
     {
+        var vm = MakeVm();
         var manifest = new Manifest
         {
             RunId = "run-1",
@@ -45,14 +56,35 @@ public class CollectStageTests
         };
 
         var reader = new MockMappedDriveReader();
-        reader.SetFile("output/manifest.json", JsonSerializer.Serialize(manifest, JsonOptions));
+        reader.SetFile(ReaderKey(vm, "run-1", "manifest.json"), JsonSerializer.Serialize(manifest, JsonOptions));
 
         var stage = MakeStage(reader);
-        var state = new RunFlowState { RunId = "run-1", Vm = MakeVm() };
+        var state = new RunFlowState { RunId = "run-1", Vm = vm };
 
         var result = await stage.ExecuteAsync(state);
 
         Assert.Equal(StageOutcome.Success, result.Outcome);
+    }
+
+    [Fact]
+    public async Task Reads_From_PerRun_OutputDir()
+    {
+        // Phase 7.5 Stream F: CollectStage must target the per-run output
+        // dir, not the legacy shared output. The parent-relative walk yields
+        // something like `../runs/run-<id>/output/manifest.json` that the
+        // reader stitches onto RemoteProjectPath.
+        var vm = MakeVm();
+        var manifest = new Manifest { RunId = "run-xyz", FilesChanged = ["file.txt"] };
+        var reader = new MockMappedDriveReader();
+        reader.SetFile(ReaderKey(vm, "run-xyz", "manifest.json"), JsonSerializer.Serialize(manifest, JsonOptions));
+
+        var stage = MakeStage(reader);
+        var result = await stage.ExecuteAsync(new RunFlowState { RunId = "run-xyz", Vm = vm });
+
+        Assert.Equal(StageOutcome.Success, result.Outcome);
+        // Every read the reader saw must mention the run_id, proving the
+        // stage didn't reach for the legacy shared path.
+        Assert.All(reader.Queries, q => Assert.Contains("run-xyz", q));
     }
 
     [Fact]
@@ -72,11 +104,12 @@ public class CollectStageTests
     [Fact]
     public async Task Fails_WhenManifestIsInvalidJson()
     {
+        var vm = MakeVm();
         var reader = new MockMappedDriveReader();
-        reader.SetFile("output/manifest.json", "not valid json{{{");
+        reader.SetFile(ReaderKey(vm, "run-1", "manifest.json"), "not valid json{{{");
 
         var stage = MakeStage(reader);
-        var state = new RunFlowState { RunId = "run-1", Vm = MakeVm() };
+        var state = new RunFlowState { RunId = "run-1", Vm = vm };
 
         var result = await stage.ExecuteAsync(state);
 
@@ -87,6 +120,7 @@ public class CollectStageTests
     [Fact]
     public async Task Fails_WhenManifestHasNoFiles()
     {
+        var vm = MakeVm();
         var manifest = new Manifest
         {
             RunId = "run-1",
@@ -95,10 +129,10 @@ public class CollectStageTests
         };
 
         var reader = new MockMappedDriveReader();
-        reader.SetFile("output/manifest.json", JsonSerializer.Serialize(manifest, JsonOptions));
+        reader.SetFile(ReaderKey(vm, "run-1", "manifest.json"), JsonSerializer.Serialize(manifest, JsonOptions));
 
         var stage = MakeStage(reader);
-        var state = new RunFlowState { RunId = "run-1", Vm = MakeVm() };
+        var state = new RunFlowState { RunId = "run-1", Vm = vm };
 
         var result = await stage.ExecuteAsync(state);
 
@@ -121,6 +155,7 @@ public class CollectStageTests
     [Fact]
     public async Task ReadsSummary_WhenPresent()
     {
+        var vm = MakeVm();
         var manifest = new Manifest
         {
             RunId = "run-1",
@@ -133,11 +168,11 @@ public class CollectStageTests
         };
 
         var reader = new MockMappedDriveReader();
-        reader.SetFile("output/manifest.json", JsonSerializer.Serialize(manifest, JsonOptions));
-        reader.SetFile("output/summary.json", JsonSerializer.Serialize(summary, JsonOptions));
+        reader.SetFile(ReaderKey(vm, "run-1", "manifest.json"), JsonSerializer.Serialize(manifest, JsonOptions));
+        reader.SetFile(ReaderKey(vm, "run-1", "summary.json"), JsonSerializer.Serialize(summary, JsonOptions));
 
         var stage = MakeStage(reader);
-        var state = new RunFlowState { RunId = "run-1", Vm = MakeVm() };
+        var state = new RunFlowState { RunId = "run-1", Vm = vm };
 
         var result = await stage.ExecuteAsync(state);
 
@@ -147,6 +182,7 @@ public class CollectStageTests
     [Fact]
     public async Task Succeeds_EvenWithoutSummary()
     {
+        var vm = MakeVm();
         var manifest = new Manifest
         {
             RunId = "run-1",
@@ -154,11 +190,11 @@ public class CollectStageTests
         };
 
         var reader = new MockMappedDriveReader();
-        reader.SetFile("output/manifest.json", JsonSerializer.Serialize(manifest, JsonOptions));
+        reader.SetFile(ReaderKey(vm, "run-1", "manifest.json"), JsonSerializer.Serialize(manifest, JsonOptions));
         // No summary file
 
         var stage = MakeStage(reader);
-        var state = new RunFlowState { RunId = "run-1", Vm = MakeVm() };
+        var state = new RunFlowState { RunId = "run-1", Vm = vm };
 
         var result = await stage.ExecuteAsync(state);
 
@@ -170,6 +206,7 @@ public class CollectStageTests
     private sealed class MockMappedDriveReader : IMappedDriveReader
     {
         private readonly Dictionary<string, string> _files = new();
+        public List<string> Queries { get; } = new();
         public bool WaitShouldTimeout { get; set; }
 
         public void SetFile(string relativePath, string content)
@@ -179,6 +216,7 @@ public class CollectStageTests
 
         public Task<string> ReadFileAsync(string vmName, string relativePath, CancellationToken ct = default)
         {
+            Queries.Add(relativePath);
             var key = NormalizePath(relativePath);
             if (!_files.TryGetValue(key, out var content))
                 throw new FileNotFoundException($"Mock file not found: {relativePath}");
@@ -187,11 +225,13 @@ public class CollectStageTests
 
         public Task<bool> FileExistsAsync(string vmName, string relativePath, CancellationToken ct = default)
         {
+            Queries.Add(relativePath);
             return Task.FromResult(_files.ContainsKey(NormalizePath(relativePath)));
         }
 
         public Task<string> WaitForFileAsync(string vmName, string relativePath, TimeSpan timeout, CancellationToken ct = default)
         {
+            Queries.Add(relativePath);
             if (WaitShouldTimeout)
                 throw new TimeoutException("Mock timeout");
 
@@ -200,6 +240,7 @@ public class CollectStageTests
 
         public Task<IReadOnlyList<string>> ListFilesAsync(string vmName, string relativePath, string pattern = "*", CancellationToken ct = default)
         {
+            Queries.Add(relativePath);
             return Task.FromResult<IReadOnlyList<string>>(
                 _files.Keys.Where(k => k.StartsWith(NormalizePath(relativePath))).ToList());
         }

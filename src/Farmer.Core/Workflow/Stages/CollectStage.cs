@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Farmer.Core.Config;
 using Farmer.Core.Contracts;
+using Farmer.Core.Layout;
 using Farmer.Core.Models;
 using Farmer.Core.Telemetry;
 using Microsoft.Extensions.Logging;
@@ -44,19 +45,27 @@ public sealed class CollectStage : IWorkflowStage
         var vm = state.Vm;
         var timeout = TimeSpan.FromMinutes(2);
 
-        // Wait for manifest.json to appear on mapped drive
-        _logger.LogInformation("Waiting for manifest.json on {Vm} mapped drive", vm.Name);
+        // Phase 7.5 Stream F: read from the per-run workspace at
+        // {RemoteRunsRoot}/run-{run_id}/output/ (DeliverStage mkdir'd it,
+        // worker.sh populated it). The reader's base path is still
+        // {RemoteProjectPath}, so ReaderPathForRunOutput expresses the run
+        // output dir as a parent-relative walk that POSIX cat / test -f /
+        // ls -1 collapse at read time.
+        var manifestRel = RunDirectoryLayout.ReaderPathForRunOutput(vm, state.RunId, "manifest.json");
+        var summaryRel  = RunDirectoryLayout.ReaderPathForRunOutput(vm, state.RunId, "summary.json");
+
+        _logger.LogInformation("Waiting for manifest.json on {Vm} run workspace (run_id={RunId})",
+            vm.Name, state.RunId);
 
         string manifestJson;
         try
         {
-            manifestJson = await _reader.WaitForFileAsync(vm.Name,
-                Path.Combine("output", "manifest.json"), timeout, ct);
+            manifestJson = await _reader.WaitForFileAsync(vm.Name, manifestRel, timeout, ct);
         }
         catch (TimeoutException)
         {
             return StageResult.Failed(Name,
-                $"Timed out waiting for output/manifest.json on {vm.Name} mapped drive");
+                $"Timed out waiting for manifest.json in run workspace on {vm.Name}");
         }
 
         // Parse manifest
@@ -75,12 +84,11 @@ public sealed class CollectStage : IWorkflowStage
 
         // Read summary (optional — don't fail if missing)
         Summary? summary = null;
-        if (await _reader.FileExistsAsync(vm.Name, Path.Combine("output", "summary.json"), ct))
+        if (await _reader.FileExistsAsync(vm.Name, summaryRel, ct))
         {
             try
             {
-                var summaryJson = await _reader.ReadFileAsync(vm.Name,
-                    Path.Combine("output", "summary.json"), ct);
+                var summaryJson = await _reader.ReadFileAsync(vm.Name, summaryRel, ct);
                 summary = JsonSerializer.Deserialize<Summary>(summaryJson, JsonOptions);
             }
             catch (Exception ex)
@@ -106,16 +114,17 @@ public sealed class CollectStage : IWorkflowStage
     }
 
     /// <summary>
-    /// Reads <c>output/per-prompt-timing.jsonl</c> from the mapped drive and emits
-    /// one back-dated <c>worker.prompt</c> span per line. worker.sh writes the file
-    /// append-only; each line carries ISO-8601 UTC start/end timestamps so Jaeger
-    /// renders the spans inside <c>workflow.stage.Dispatch</c>'s time window. See
-    /// docs/adr/* for the "filesystem first" rationale over emitting OTLP from bash.
+    /// Reads <c>output/per-prompt-timing.jsonl</c> from the per-run workspace
+    /// and emits one back-dated <c>worker.prompt</c> span per line. worker.sh
+    /// writes the file append-only; each line carries ISO-8601 UTC start/end
+    /// timestamps so Jaeger renders the spans inside
+    /// <c>workflow.stage.Dispatch</c>'s time window. See docs/adr/* for the
+    /// "filesystem first" rationale over emitting OTLP from bash.
     /// </summary>
     private async Task EmitPromptSpansAsync(VmConfig vm, string runId, CancellationToken ct)
     {
-        const string relativePath = "output/per-prompt-timing.jsonl";
-        if (!await _reader.FileExistsAsync(vm.Name, relativePath.Replace('/', Path.DirectorySeparatorChar), ct))
+        var timingRel = RunDirectoryLayout.ReaderPathForRunOutput(vm, runId, "per-prompt-timing.jsonl");
+        if (!await _reader.FileExistsAsync(vm.Name, timingRel, ct))
         {
             _logger.LogInformation("No per-prompt-timing.jsonl on {Vm}; skipping span reconstruction.", vm.Name);
             return;
@@ -124,8 +133,7 @@ public sealed class CollectStage : IWorkflowStage
         string jsonl;
         try
         {
-            jsonl = await _reader.ReadFileAsync(vm.Name,
-                relativePath.Replace('/', Path.DirectorySeparatorChar), ct);
+            jsonl = await _reader.ReadFileAsync(vm.Name, timingRel, ct);
         }
         catch (Exception ex)
         {

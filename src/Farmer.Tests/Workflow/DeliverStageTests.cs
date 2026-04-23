@@ -16,7 +16,8 @@ public class DeliverStageTests
         SshHost = "claudefarm1",
         SshUser = "claude",
         MappedDriveLetter = "N",
-        RemoteProjectPath = "~/projects"
+        RemoteProjectPath = "/home/claude/projects",
+        RemoteRunsRoot = "/home/claude/runs",
     };
 
     [Fact]
@@ -45,7 +46,7 @@ public class DeliverStageTests
 
         Assert.Equal(StageOutcome.Success, result.Outcome);
 
-        // Should have: 1 mkdir + 2 prompt uploads + 1 task-packet upload = 3 SCP calls
+        // Should have: 2 prompt uploads + 1 task-packet upload = 3 SCP calls
         Assert.Equal(3, ssh.ContentUploads.Count);
         Assert.Contains(ssh.ContentUploads, u => u.RemotePath.Contains("1-Setup.md"));
         Assert.Contains(ssh.ContentUploads, u => u.RemotePath.Contains("2-Build.md"));
@@ -53,32 +54,64 @@ public class DeliverStageTests
     }
 
     [Fact]
-    public async Task Creates_Directories_OnVm()
+    public async Task Uploads_Under_PerRun_Workspace()
+    {
+        // Phase 7.5 Stream F: destination path is {RemoteRunsRoot}/run-{run_id}/
+        // not the legacy shared {RemoteProjectPath}. Two runs on the same VM
+        // should land in distinct directories.
+        var ssh = new MockSshService();
+        var stage = new DeliverStage(ssh, NullLogger<DeliverStage>.Instance);
+
+        var state = new RunFlowState
+        {
+            RunId = "run-abc123",
+            Vm = MakeVm(),
+            TaskPacket = new TaskPacket
+            {
+                RunId = "run-abc123",
+                Prompts = [new PromptFile { Order = 1, Filename = "1-Build.md", Content = "x" }],
+            },
+        };
+
+        await stage.ExecuteAsync(state);
+
+        Assert.All(ssh.ContentUploads, u =>
+            Assert.Contains("/home/claude/runs/run-abc123/", u.RemotePath));
+        Assert.Contains(ssh.ContentUploads,
+            u => u.RemotePath == "/home/claude/runs/run-abc123/plans/1-Build.md");
+        Assert.Contains(ssh.ContentUploads,
+            u => u.RemotePath == "/home/claude/runs/run-abc123/plans/task-packet.json");
+    }
+
+    [Fact]
+    public async Task Creates_PerRun_Directories_OnVm()
     {
         var ssh = new MockSshService();
         var stage = new DeliverStage(ssh, NullLogger<DeliverStage>.Instance);
 
         var state = new RunFlowState
         {
-            RunId = "run-1",
+            RunId = "run-xyz",
             Vm = MakeVm(),
-            TaskPacket = new TaskPacket { RunId = "run-1", Prompts = [new PromptFile { Order = 1, Filename = "1-x.md", Content = "x" }] }
+            TaskPacket = new TaskPacket { RunId = "run-xyz", Prompts = [new PromptFile { Order = 1, Filename = "1-x.md", Content = "x" }] }
         };
 
         await stage.ExecuteAsync(state);
 
         Assert.Single(ssh.Commands);
-        Assert.Contains("mkdir -p", ssh.Commands[0].Command);
-        Assert.Contains("plans", ssh.Commands[0].Command);
-        Assert.Contains(".comms", ssh.Commands[0].Command);
+        var cmd = ssh.Commands[0].Command;
+        Assert.Contains("mkdir -p", cmd);
+        Assert.Contains("/home/claude/runs/run-xyz/plans", cmd);
+        Assert.Contains("/home/claude/runs/run-xyz/.comms", cmd);
+        Assert.Contains("/home/claude/runs/run-xyz/output", cmd);
     }
 
     [Fact]
-    public async Task Wipes_plans_and_output_before_mkdir()
+    public async Task Does_Not_Rm_Rf_Anything()
     {
-        // PR #15's live-verify caught leftover prompts from prior runs polluting the
-        // plans/ dir. DeliverStage now rm -rf's plans/ + output/ before recreating
-        // them so each run starts from a clean slate.
+        // Per-run dir is freshly derived from run_id so it can't pre-exist --
+        // no wipe is necessary. Removing the shared-dir rm -rf also removes
+        // the risk of blasting a sibling run's workspace.
         var ssh = new MockSshService();
         var stage = new DeliverStage(ssh, NullLogger<DeliverStage>.Instance);
 
@@ -95,45 +128,33 @@ public class DeliverStageTests
 
         await stage.ExecuteAsync(state);
 
-        var prep = ssh.Commands.Single().Command;
-        Assert.Contains("rm -rf", prep);
-        Assert.Contains("~/projects/plans", prep);
-        Assert.Contains("~/projects/output", prep);
-        Assert.Contains("mkdir -p", prep);
-        // Order matters: rm comes before mkdir so we don't delete what we just created.
-        Assert.True(prep.IndexOf("rm -rf", StringComparison.Ordinal)
-                  < prep.IndexOf("mkdir -p", StringComparison.Ordinal),
-            $"rm -rf must precede mkdir -p in: {prep}");
+        Assert.DoesNotContain("rm -rf", ssh.Commands[0].Command);
     }
 
     [Fact]
-    public async Task Does_not_wipe_comms_dir()
+    public async Task Two_Distinct_RunIds_Get_Two_Distinct_Dirs()
     {
-        // .comms/progress.md is HeartbeatMiddleware's liveness signal; wiping it
-        // could race against worker.sh's first write_progress call. The dir gets
-        // mkdir -p'd alongside plans/output, but never rm -rf'd.
-        var ssh = new MockSshService();
-        var stage = new DeliverStage(ssh, NullLogger<DeliverStage>.Instance);
+        // The collision that motivated Stream F (two discord-bot runs landing
+        // in the same project dir) is prevented because the dir name is
+        // derived from run_id, which is per-run unique.
+        var ssh1 = new MockSshService();
+        var ssh2 = new MockSshService();
+        var stage1 = new DeliverStage(ssh1, NullLogger<DeliverStage>.Instance);
+        var stage2 = new DeliverStage(ssh2, NullLogger<DeliverStage>.Instance);
 
-        var state = new RunFlowState
+        var packet = (string rid) => new TaskPacket
         {
-            RunId = "run-comms",
-            Vm = MakeVm(),
-            TaskPacket = new TaskPacket
-            {
-                RunId = "run-comms",
-                Prompts = [new PromptFile { Order = 1, Filename = "1-x.md", Content = "x" }],
-            },
+            RunId = rid,
+            Prompts = [new PromptFile { Order = 1, Filename = "1-Build.md", Content = "x" }],
         };
 
-        await stage.ExecuteAsync(state);
+        await stage1.ExecuteAsync(new RunFlowState { RunId = "run-python", Vm = MakeVm(), TaskPacket = packet("run-python") });
+        await stage2.ExecuteAsync(new RunFlowState { RunId = "run-javascript", Vm = MakeVm(), TaskPacket = packet("run-javascript") });
 
-        var prep = ssh.Commands.Single().Command;
-        // The rm -rf token list must not include .comms (the mkdir -p list still does).
-        var rmSection = prep.Substring(prep.IndexOf("rm -rf", StringComparison.Ordinal),
-                                       prep.IndexOf("&&", StringComparison.Ordinal) - prep.IndexOf("rm -rf", StringComparison.Ordinal));
-        Assert.DoesNotContain(".comms", rmSection);
-        Assert.Contains(".comms", prep);  // still gets mkdir'd
+        Assert.Contains("run-python", ssh1.Commands[0].Command);
+        Assert.DoesNotContain("run-javascript", ssh1.Commands[0].Command);
+        Assert.Contains("run-javascript", ssh2.Commands[0].Command);
+        Assert.DoesNotContain("run-python", ssh2.Commands[0].Command);
     }
 
     [Fact]
@@ -170,8 +191,9 @@ public class DeliverStageTests
 
         var state = new RunFlowState
         {
+            RunId = "run-fail",
             Vm = MakeVm(),
-            TaskPacket = new TaskPacket { Prompts = [new PromptFile { Order = 1, Filename = "1-x.md", Content = "x" }] }
+            TaskPacket = new TaskPacket { RunId = "run-fail", Prompts = [new PromptFile { Order = 1, Filename = "1-x.md", Content = "x" }] }
         };
 
         var result = await stage.ExecuteAsync(state);
