@@ -46,6 +46,7 @@ public class DiCompositionTests
         services.AddSingleton<DeliverStage>();
         services.AddSingleton<DispatchStage>();
         services.AddSingleton<CollectStage>();
+        services.AddSingleton<ArchiveStage>();
         services.AddSingleton<RetrospectiveStage>();
 
         // Retrospective agent — fake for DI test
@@ -89,14 +90,15 @@ public class DiCompositionTests
         Assert.NotNull(stagesField);
         var stages = (IReadOnlyList<IWorkflowStage>)stagesField!.GetValue(workflow)!;
 
-        Assert.Equal(7, stages.Count);
+        Assert.Equal(8, stages.Count);
         Assert.Equal("CreateRun", stages[0].Name);
         Assert.Equal("LoadPrompts", stages[1].Name);
         Assert.Equal("ReserveVm", stages[2].Name);
         Assert.Equal("Deliver", stages[3].Name);
         Assert.Equal("Dispatch", stages[4].Name);
         Assert.Equal("Collect", stages[5].Name);
-        Assert.Equal("Retrospective", stages[6].Name);
+        Assert.Equal("Archive", stages[6].Name);
+        Assert.Equal("Retrospective", stages[7].Name);
     }
 
     [Fact]

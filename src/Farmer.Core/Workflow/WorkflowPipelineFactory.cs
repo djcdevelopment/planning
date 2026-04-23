@@ -41,6 +41,7 @@ public sealed class WorkflowPipelineFactory
             _sp.GetRequiredService<DeliverStage>(),
             _sp.GetRequiredService<DispatchStage>(),
             _sp.GetRequiredService<CollectStage>(),
+            _sp.GetRequiredService<ArchiveStage>(),
             _sp.GetRequiredService<RetrospectiveStage>(),
         };
 

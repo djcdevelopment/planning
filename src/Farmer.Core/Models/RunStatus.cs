@@ -12,6 +12,7 @@ public enum RunPhase
     Dispatching,
     Executing,
     Collecting,
+    Archiving,
     Reviewing,
     Finalizing,
     Complete,
