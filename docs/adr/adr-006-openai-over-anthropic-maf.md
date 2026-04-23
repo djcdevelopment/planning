@@ -68,3 +68,60 @@ var dto = response.Result;  // validated by the SDK against RetrospectiveDto's s
 - `src/Farmer.Agents/MafRetrospectiveAgent.cs` — the implementation
 - `src/Farmer.Core/Config/OpenAISettings.cs` — the config POCO (renamed from `AnthropicSettings`)
 - Commit message on `e6655b2 Phase 6: Farmer.Agents project + IRetrospectiveAgent + MAF OpenAI provider` — the commit where the pivot landed
+
+## Update 2026-04-22 — deployment path moved to Azure OpenAI + Entra
+
+**Status:** Additive. The original decision (MAF + OpenAI-SDK over MAF + Anthropic-preview) still stands. Only the underlying HTTP transport changed.
+
+### What changed
+
+The retrospective agent's HTTP client moved from the public OpenAI endpoint (+ `OPENAI_API_KEY`) to Azure OpenAI (+ Entra via `DefaultAzureCredential`). Concretely:
+
+```csharp
+// before (Phase 6)
+var openAiClient = new OpenAIClient(apiKey);
+var chatClient = openAiClient.GetChatClient("gpt-4o-mini");
+
+// after (Phase 7)
+var azureClient = new AzureOpenAIClient(new Uri(endpoint), new DefaultAzureCredential());
+var chatClient = azureClient.GetChatClient("gpt-4.1-mini");
+```
+
+`AzureOpenAIClient` (from `Azure.AI.OpenAI`) shares a base class with `OpenAIClient` and the returned chat client flows through `AsIChatClient().AsAIAgent(...)` unchanged. **The MAF binding is still `Microsoft.Agents.AI.OpenAI` 1.1.0.** Typed structured output via `RunAsync<T>()` is untouched — the whole value prop of the original pivot (no hand-rolled JSON parser) is preserved.
+
+### Why this is additive, not superseding
+
+The question ADR-006 answered — "which MAF provider library do we use on the host?" — still has the same answer: `Microsoft.Agents.AI.OpenAI`. We did not reopen Anthropic vs. OpenAI. We swapped _transports_ underneath a fixed provider binding. The pros and cons in the original Consequences section still apply.
+
+What this update does reshuffle:
+
+- **No more OpenAI API key.** The "three credential systems" note in the Negative section drops to two: Entra on the host, SSH on the VM (Claude CLI on the VM is authed separately per VM, untouched). The PR #16 OpenAI-key leak incident that triggered the Phase 7 secret scanner is now mechanically impossible for this code path — there is no key to leak.
+- **No more per-token spend on a credit-card-billed OpenAI account.** Spend moves to the Azure subscription; cost report token accounting still works (Azure OpenAI returns the same `Usage` shape).
+- **Different failure modes.** Missing API key is replaced by "missing Entra token" or "missing role assignment" or "wrong tenant." The skip path (AutoPass per ADR-007) still applies — retrospectives are postmortem, never gating.
+
+### Config shape change
+
+`OpenAISettings` lost `ApiKey` and `QaModel`, gained `Endpoint` and `DeploymentName`. `ResolveApiKey()` is gone. `Farmer:OpenAI` in `appsettings.json`:
+
+```jsonc
+// before
+{ "ApiKey": "", "QaModel": "gpt-4o-mini", ... }
+// after
+{
+  "Endpoint": "https://farmer-openai-dev.openai.azure.com/",
+  "DeploymentName": "gpt-4.1-mini",
+  ...
+}
+```
+
+### Prerequisites
+
+- Azure OpenAI resource provisioned. For Farmer development: `farmer-openai-dev` in the dev subscription, with a deployment named `gpt-4.1-mini` backed by `gpt-4.1-mini` model version `2025-04-14`.
+- The Host process's identity (developer's Entra user locally; managed identity in Azure) has the **Cognitive Services OpenAI User** role on the resource.
+- Developer signed in via `Connect-AzAccount` so `AzurePowerShellCredential` in the `DefaultAzureCredential` chain resolves a token. In Azure, managed identity wins instead.
+
+### Related
+
+- `src/Farmer.Agents/MafRetrospectiveAgent.cs` — the `TryBuildAgent` rewrite.
+- `src/Farmer.Core/Config/OpenAISettings.cs` — the new config shape.
+- `docs/phase7-close-the-loop.md` — the Phase 7 plan that this work closes.
