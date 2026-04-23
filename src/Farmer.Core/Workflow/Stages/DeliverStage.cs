@@ -36,19 +36,22 @@ public sealed class DeliverStage : IWorkflowStage
 
         var vm = state.Vm;
         var vmName = vm.Name;
+        var runId = state.RunId;
 
-        // Wipe + recreate plans/ and output/ on the VM so leftover files from prior
-        // runs (stale prompts, prior manifest.json, prior per-prompt-timing.jsonl)
-        // don't pollute this run. .comms/ is intentionally preserved -- HeartbeatMiddleware
-        // reads progress.md from there during execution and worker.sh overwrites the
-        // file on its first write_progress call. worker.sh itself lives at
-        // ~/projects/worker.sh, sibling to plans/output -- not wiped (parity check
-        // from PR #13 handles drift detection).
-        var plans  = RunDirectoryLayout.VmPlansDir(vm);
-        var comms  = RunDirectoryLayout.VmCommsDir(vm);
-        var output = RunDirectoryLayout.VmOutputDir(vm);
+        // Phase 7.5 Stream F: each run gets its own workspace at
+        // {RemoteRunsRoot}/run-{run_id}/ so runs whose project-name convention
+        // would otherwise collide on the shared {RemoteProjectPath} can't
+        // contaminate each other. No rm -rf is needed here because the dir
+        // name is freshly derived from run_id and couldn't exist.
+        var runRoot = RunDirectoryLayout.VmRunRoot(vm, runId);
+        var plans  = RunDirectoryLayout.VmRunPlansDir(vm, runId);
+        var comms  = RunDirectoryLayout.VmRunCommsDir(vm, runId);
+        var output = RunDirectoryLayout.VmRunOutputDir(vm, runId);
+
+        _logger.LogInformation("Preparing per-run workspace on {Vm}: {RunRoot}", vmName, runRoot);
+
         var prepResult = await _ssh.ExecuteAsync(vmName,
-            $"rm -rf {plans} {output} && mkdir -p {plans} {comms} {output}",
+            $"mkdir -p {plans} {comms} {output}",
             ct: ct);
 
         if (!prepResult.Success)
@@ -60,17 +63,17 @@ public sealed class DeliverStage : IWorkflowStage
             _logger.LogInformation("Delivering prompt {Order}: {Filename} to {Vm}",
                 prompt.Order, prompt.Filename, vmName);
 
-            var remotePath = RunDirectoryLayout.VmPlanFile(vm, prompt.Filename);
+            var remotePath = RunDirectoryLayout.VmRunPlanFile(vm, runId, prompt.Filename);
             await _ssh.ScpUploadContentAsync(vmName, prompt.Content, remotePath, ct);
         }
 
         // Upload task-packet.json
         var taskPacketJson = JsonSerializer.Serialize(state.TaskPacket, JsonOptions);
         await _ssh.ScpUploadContentAsync(vmName, taskPacketJson,
-            RunDirectoryLayout.VmTaskPacket(vm), ct);
+            RunDirectoryLayout.VmRunTaskPacket(vm, runId), ct);
 
-        _logger.LogInformation("Delivered {Count} prompts + task-packet.json to {Vm}",
-            state.TaskPacket.Prompts.Count, vmName);
+        _logger.LogInformation("Delivered {Count} prompts + task-packet.json to {Vm}:{RunRoot}",
+            state.TaskPacket.Prompts.Count, vmName, runRoot);
 
         return StageResult.Succeeded(Name);
     }

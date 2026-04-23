@@ -31,7 +31,16 @@ public sealed class DispatchStage : IWorkflowStage
         var vm = state.Vm;
         var timeout = TimeSpan.FromMinutes(_settings.SshDispatchTimeoutMinutes);
 
-        var command = $"cd {RunDirectoryLayout.VmProjectRoot(vm)} && bash worker.sh {state.RunId}";
+        // Phase 7.5 Stream F: worker.sh lives at {RemoteProjectPath}/worker.sh
+        // (vm-golden convention, managed by check-worker-parity.ps1). We cd
+        // there to launch it, then export WORK_DIR so the script operates on
+        // the per-run workspace under {RemoteRunsRoot}/run-{run_id}/ instead
+        // of the shared {RemoteProjectPath}. WORK_DIR is the single opt-in
+        // signal worker.sh uses to pick the new layout -- if unset it falls
+        // back to legacy behaviour so pre-F deployments still work.
+        var runDir = RunDirectoryLayout.VmRunRoot(vm, state.RunId);
+        var scriptDir = RunDirectoryLayout.VmProjectRoot(vm);
+        var command = $"cd {scriptDir} && WORK_DIR={runDir} bash worker.sh {state.RunId}";
 
         _logger.LogInformation("Dispatching to {Vm}: {Command} (timeout: {Timeout}min)",
             vm.Name, command, _settings.SshDispatchTimeoutMinutes);

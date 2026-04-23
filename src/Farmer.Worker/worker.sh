@@ -4,10 +4,11 @@
 # ====================================
 #
 # Invoked by DispatchStage via:
-#   cd ~/projects && bash worker.sh <run_id>
+#   cd ~/projects && WORK_DIR=/home/claude/runs/run-<id> bash worker.sh <run_id>
 #
-# Runs Claude CLI per prompt file in ~/projects/plans/, captures output,
-# writes manifest.json + summary.json + worker-retro.md for CollectStage.
+# Runs Claude CLI per prompt file in $WORK_DIR/plans/, captures output,
+# writes manifest.json + summary.json + worker-retro.md under $WORK_DIR/output/
+# for CollectStage.
 #
 # Full dangerous mode: --dangerously-skip-permissions, no tool allowlist,
 # high max-turns. The VM is the sandbox. See ADR-008.
@@ -19,6 +20,10 @@
 #   through to fake's clean output to demonstrate the feedback loop.
 # Default is real.
 #
+# Phase 7.5 Stream F: workspace is per-run. If WORK_DIR is set (by
+# DispatchStage) we honor it; otherwise we fall back to the legacy
+# shared ~/projects layout so pre-F host deployments still function.
+#
 
 set -uo pipefail
 
@@ -26,7 +31,10 @@ set -uo pipefail
 export PATH="$HOME/.npm-global/bin:$PATH"
 
 RUN_ID="${1:-unknown}"
-PROJECT_ROOT="${HOME}/projects"
+# WORK_DIR is the per-run workspace (Phase 7.5 Stream F). Absent => legacy
+# shared-workspace behavior. Parameter expansion :- supplies the default
+# without requiring the variable to be declared, matching `set -u` cleanliness.
+PROJECT_ROOT="${WORK_DIR:-${HOME}/projects}"
 PLANS_DIR="${PROJECT_ROOT}/plans"
 OUTPUT_DIR="${PROJECT_ROOT}/output"
 COMMS_DIR="${PROJECT_ROOT}/.comms"
@@ -43,6 +51,16 @@ SUMMARY_ISSUES=()
 PROMPT_RESULTS=()
 
 mkdir -p "$OUTPUT_DIR" "$COMMS_DIR"
+
+# Phase 7.5 Stream F: per-run workspaces aren't pre-initialized as git repos
+# (DeliverStage only mkdir's them). `write_manifest` runs `git status` to
+# compute files_changed; without a repo it silently returns nothing and we
+# fall back to the WORKER_NO_CHANGES sentinel. `git init` here is cheap and
+# lets Claude's file writes flow into the manifest the same way the legacy
+# shared ~/projects repo did. Guarded so we don't re-init an existing repo.
+if [ ! -d "$PROJECT_ROOT/.git" ]; then
+  git init --quiet "$PROJECT_ROOT" 2>/dev/null || true
+fi
 
 # --- Determine mode ---
 TASK_WORKER_MODE=$(jq -r '.worker_mode // empty' "$TASK_PACKET_FILE" 2>/dev/null)

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using Farmer.Core.Config;
 using Farmer.Core.Contracts;
+using Farmer.Core.Layout;
 using Farmer.Core.Models;
 using Farmer.Core.Telemetry;
 using Farmer.Core.Workflow;
@@ -30,11 +31,21 @@ public class CollectStage_PromptSpanTests
         SshHost = "spy-vm",
         SshUser = "claude",
         MappedDriveLetter = "N",
-        RemoteProjectPath = "~/projects",
+        RemoteProjectPath = "/home/claude/projects",
+        RemoteRunsRoot = "/home/claude/runs",
     };
 
     private static CollectStage MakeStage(MockMappedDriveReader reader) =>
         new(reader, new MockRunStore(), Options.Create(new FarmerSettings()), NullLogger<CollectStage>.Instance);
+
+    /// <summary>
+    /// Phase 7.5 Stream F: CollectStage looks up files under the per-run
+    /// workspace, expressed to the reader as a parent-relative walk from
+    /// <see cref="VmConfig.RemoteProjectPath"/>. Shared helper so each test
+    /// seeds files at the exact key the stage will query.
+    /// </summary>
+    private static string ReaderKey(VmConfig vm, string runId, string file) =>
+        RunDirectoryLayout.ReaderPathForRunOutput(vm, runId, file);
 
     /// <summary>Subscribes to FarmerActivitySource + returns captured activities; Dispose stops the listener.</summary>
     private sealed class SpanCapture : IDisposable
@@ -81,8 +92,9 @@ public class CollectStage_PromptSpanTests
     [Fact]
     public async Task Emits_one_worker_prompt_span_per_timing_entry()
     {
+        var vm = MakeVm();
         var reader = new MockMappedDriveReader();
-        reader.SetFile("output/manifest.json", ValidManifestJson());
+        reader.SetFile(ReaderKey(vm, "run-1", "manifest.json"), ValidManifestJson());
 
         var start = DateTimeOffset.UtcNow.AddMinutes(-5);
         var jsonl = string.Join("\n", new[]
@@ -91,12 +103,12 @@ public class CollectStage_PromptSpanTests
             TimingEntry(2, "2-Build.md",  exit: 0, start.AddSeconds(10), start.AddSeconds(30)),
             TimingEntry(3, "3-Tests.md",  exit: 1, start.AddSeconds(30), start.AddSeconds(45)),
         });
-        reader.SetFile("output/per-prompt-timing.jsonl", jsonl);
+        reader.SetFile(ReaderKey(vm, "run-1", "per-prompt-timing.jsonl"), jsonl);
 
         using var capture = new SpanCapture();
 
         var result = await MakeStage(reader).ExecuteAsync(
-            new RunFlowState { RunId = "run-1", Vm = MakeVm() });
+            new RunFlowState { RunId = "run-1", Vm = vm });
 
         Assert.Equal(StageOutcome.Success, result.Outcome);
 
@@ -120,15 +132,16 @@ public class CollectStage_PromptSpanTests
     [Fact]
     public async Task Back_dated_span_start_and_duration_match_entries()
     {
+        var vm = MakeVm();
         var reader = new MockMappedDriveReader();
-        reader.SetFile("output/manifest.json", ValidManifestJson());
+        reader.SetFile(ReaderKey(vm, "run-ts", "manifest.json"), ValidManifestJson());
 
         var start = new DateTimeOffset(2026, 4, 16, 12, 0, 0, TimeSpan.Zero);
         var end   = start.AddSeconds(7);
-        reader.SetFile("output/per-prompt-timing.jsonl", TimingEntry(1, "1-Setup.md", 0, start, end));
+        reader.SetFile(ReaderKey(vm, "run-ts", "per-prompt-timing.jsonl"), TimingEntry(1, "1-Setup.md", 0, start, end));
 
         using var capture = new SpanCapture();
-        await MakeStage(reader).ExecuteAsync(new RunFlowState { RunId = "run-ts", Vm = MakeVm() });
+        await MakeStage(reader).ExecuteAsync(new RunFlowState { RunId = "run-ts", Vm = vm });
 
         var span = capture.Stopped.Single(a => a.OperationName == "worker.prompt");
         Assert.Equal(start.UtcDateTime, span.StartTimeUtc);
@@ -140,13 +153,14 @@ public class CollectStage_PromptSpanTests
     [Fact]
     public async Task Missing_timing_file_is_silent_noop()
     {
+        var vm = MakeVm();
         var reader = new MockMappedDriveReader();
-        reader.SetFile("output/manifest.json", ValidManifestJson());
+        reader.SetFile(ReaderKey(vm, "run-miss", "manifest.json"), ValidManifestJson());
         // No timing file.
 
         using var capture = new SpanCapture();
         var result = await MakeStage(reader).ExecuteAsync(
-            new RunFlowState { RunId = "run-miss", Vm = MakeVm() });
+            new RunFlowState { RunId = "run-miss", Vm = vm });
 
         Assert.Equal(StageOutcome.Success, result.Outcome);
         Assert.DoesNotContain(capture.Stopped, a => a.OperationName == "worker.prompt");
@@ -155,8 +169,9 @@ public class CollectStage_PromptSpanTests
     [Fact]
     public async Task Malformed_line_is_skipped_and_other_lines_processed()
     {
+        var vm = MakeVm();
         var reader = new MockMappedDriveReader();
-        reader.SetFile("output/manifest.json", ValidManifestJson());
+        reader.SetFile(ReaderKey(vm, "run-bad", "manifest.json"), ValidManifestJson());
 
         var start = DateTimeOffset.UtcNow.AddMinutes(-1);
         var jsonl = string.Join("\n", new[]
@@ -165,11 +180,11 @@ public class CollectStage_PromptSpanTests
             "this is not JSON {{{",
             TimingEntry(2, "2-Build.md", 0, start.AddSeconds(2), start.AddSeconds(4)),
         });
-        reader.SetFile("output/per-prompt-timing.jsonl", jsonl);
+        reader.SetFile(ReaderKey(vm, "run-bad", "per-prompt-timing.jsonl"), jsonl);
 
         using var capture = new SpanCapture();
         var result = await MakeStage(reader).ExecuteAsync(
-            new RunFlowState { RunId = "run-bad", Vm = MakeVm() });
+            new RunFlowState { RunId = "run-bad", Vm = vm });
 
         Assert.Equal(StageOutcome.Success, result.Outcome);
         var promptSpans = capture.Stopped.Where(a => a.OperationName == "worker.prompt").ToList();
