@@ -98,8 +98,11 @@ public sealed class RunsBrowserService
         if (result is null) return null;
 
         // work_request_name isn't on result.json -- grab it from request.json.
+        // user_id likewise lives only on request.json; surface it so the UI can
+        // filter run history per caller. Phase Demo v2 Stream 3.
         var requestPath = RunDirectoryLayout.RunRequestFile(_settings.Paths.Runs, runId);
         string? workRequestName = null;
+        string? userId = null;
         if (File.Exists(requestPath))
         {
             try
@@ -107,6 +110,7 @@ public sealed class RunsBrowserService
                 var reqJson = File.ReadAllText(requestPath);
                 var req = JsonSerializer.Deserialize<RequestDoc>(reqJson, ReadOptions);
                 workRequestName = req?.WorkRequestName;
+                userId = req?.UserId;
             }
             catch { /* optional */ }
         }
@@ -129,6 +133,7 @@ public sealed class RunsBrowserService
         return new RunSummary(
             RunId: result.RunId ?? runId,
             WorkRequestName: workRequestName,
+            UserId: userId,
             FinalPhase: result.FinalPhase,
             Success: result.Success,
             Verdict: review?.Verdict ?? result.ReviewVerdict?.Verdict,
@@ -352,6 +357,7 @@ public sealed class RunsBrowserService
     public sealed record RunSummary(
         string RunId,
         string? WorkRequestName,
+        string? UserId,
         string? FinalPhase,
         bool Success,
         string? Verdict,
@@ -402,6 +408,7 @@ public sealed class RunsBrowserService
     private sealed class RequestDoc
     {
         [JsonPropertyName("work_request_name")] public string? WorkRequestName { get; set; }
+        [JsonPropertyName("user_id")] public string? UserId { get; set; }
     }
 
     private sealed class ArtifactsIndexDoc

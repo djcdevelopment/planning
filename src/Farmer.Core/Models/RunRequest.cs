@@ -76,4 +76,25 @@ public sealed class RunRequest
     /// </summary>
     [JsonPropertyName("prompts_inline")]
     public List<InlinePrompt>? PromptsInline { get; set; }
+
+    /// <summary>
+    /// Opaque caller identity attributed to this run. Stamped into
+    /// <c>request.json</c> at run-directory creation and surfaced by the
+    /// run-browser endpoints so a front-end can filter history per user.
+    ///
+    /// Populated in one of three ways, in order of precedence:
+    /// <list type="number">
+    ///   <item><c>user_id</c> on the JSON body (preferred contract).</item>
+    ///   <item>The <c>X-Farmer-User-Id</c> HTTP header on the <c>/trigger</c>
+    ///         request (convenience for curl; used only when the body field is
+    ///         absent).</item>
+    ///   <item>Null — back-compat for clients that don't care about identity.</item>
+    /// </list>
+    ///
+    /// Farmer does NOT validate this value (demo posture: the tunnel ingress
+    /// is the trust boundary; an authenticating proxy in front of Farmer is
+    /// responsible for stamping it). See Phase Demo v2 Stream 3.
+    /// </summary>
+    [JsonPropertyName("user_id")]
+    public string? UserId { get; set; }
 }

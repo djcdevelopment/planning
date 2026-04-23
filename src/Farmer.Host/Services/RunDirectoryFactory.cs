@@ -76,6 +76,7 @@ public sealed class RunDirectoryFactory
             ParentRunId = priorRunId ?? trigger.ParentRunId,
             Feedback = priorFeedback ?? trigger.Feedback,
             PromptsInline = trigger.PromptsInline,
+            UserId = trigger.UserId,
         };
 
         // Write request.json
@@ -122,4 +123,11 @@ public sealed class InboxTrigger
     /// </summary>
     [System.Text.Json.Serialization.JsonPropertyName("prompts_inline")]
     public List<InlinePrompt>? PromptsInline { get; set; }
+
+    /// <summary>
+    /// Optional caller identity. Propagated to <see cref="RunRequest.UserId"/>
+    /// verbatim; Farmer does not validate. See Phase Demo v2 Stream 3.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonPropertyName("user_id")]
+    public string? UserId { get; set; }
 }
