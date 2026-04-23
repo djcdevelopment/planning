@@ -348,8 +348,18 @@ main() {
       SUMMARY_ISSUES+=("prompt $PROMPT_INDEX ($prompt_name) failed with exit code $exit_code")
     fi
 
-    # Write partial manifest after every prompt for SIGKILL resilience
-    write_manifest "in_progress"
+    # (No per-prompt manifest write.) Earlier versions called
+    # `write_manifest "in_progress"` here for SIGKILL resilience, but that
+    # created a write-vs-read race with CollectStage: WaitForFileAsync on
+    # the host would catch the early snapshot (WORKER_NO_CHANGES when
+    # prompt 1 hadn't added files yet to git's index) and move on, so
+    # ArchiveStage ran against an empty manifest and the retrospective
+    # correctly but unhelpfully said "no source captured."
+    #
+    # SIGKILL resilience is still provided by per-prompt-timing.jsonl
+    # (appended line-by-line above) — Collect reconstructs stage spans
+    # from it. The final write_manifest "complete" at the end of this
+    # function is the authoritative one.
   done
 
   # Final outputs
