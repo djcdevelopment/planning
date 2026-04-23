@@ -6,12 +6,13 @@ If you're an AI session (Claude Code, another agent, future-me) picking up this 
 
 **Farmer** is a .NET 9 control plane that orchestrates Claude CLI workers on Hyper-V Ubuntu VMs, with a Microsoft Agent Framework (MAF) retrospective agent on the host that reviews every run. NATS JetStream + ObjectStore for coordination, Jaeger for traces, HTTP `/trigger` for ingress, OTel-instrumented throughout. Target audience: Azure/.NET developers learning agent orchestration. The competitive differentiator is using MAF "as much as possible" while keeping workers autonomous on VMs. See [README.md](./README.md) for the full pitch and architecture diagram.
 
-## Current phase state (as of 2026-04-16 session)
+## Current phase state (as of 2026-04-23 session)
 
 Everything below is merged to `main` unless noted.
 
 - **Phase 5** shipped: externalized runtime, OTel, real SSH end-to-end verified.
 - **Phase 6** shipped: real `worker.sh` + Claude CLI on VM, `RetrospectiveStage` + MAF OpenAI `gpt-4o-mini`.
+- **Phase 7 — close the learning loop (2026-04-23)**: Stream A retired stale `D:\` path defaults → `C:\work\iso\planning-runtime`. Stream B moved the retrospective agent to **Azure OpenAI + Entra** (`DefaultAzureCredential`), model `gpt-4.1-mini` in `farmer-openai-dev`/`rg-farmer-dev`/eastus2. Stream D replaced mapped-drive readback with `SshWorkerFileReader` behind the existing `IMappedDriveReader` — WinFsp/SSHFS-Win no longer required. Real-mode smoke trace `run-20260423-083153-f1a957` closes the loop end-to-end (7/7 green, verdict=Accept, directive-suggestions threaded). See [docs/phase7-retro.md](./docs/phase7-retro.md).
 - **NATS cutover (PR #5)**: file-based `InboxWatcher` retired. Every stage transition publishes a `RunEvent` to the `FARMER_RUNS` JetStream stream; run artifacts upload to the `farmer-runs-out` ObjectStore bucket. See [ADR-010](./docs/adr/adr-010-nats-messaging-cutover.md).
 - **Phase 7 retry driver (PR #8)**: opt-in retry via `RetryPolicy` on the `/trigger` body. Driver loops up to `max_attempts` on configured verdicts; each retry gets a synthetic `0-feedback.md` prompt with the prior attempt's `ReviewVerdict.Findings` + `Suggestions`. Chain linked via `parent_run_id`. See [ADR-011](./docs/adr/adr-011-retry-driver.md).
 - **VM release fix (PR #10)**: `RunWorkflow.ExecuteAsync` now releases the reserved VM in a `finally` block. Before this, `IVmManager.ReleaseAsync` was never called by anything; in-process retry chains failed at attempt 2's ReserveVm. See [docs/session-retro-2026-04-15.md](./docs/session-retro-2026-04-15.md).
@@ -19,7 +20,7 @@ Everything below is merged to `main` unless noted.
 - **Per-prompt trace spans (PR #15)**: log-based reconstruction of per-prompt spans from the worker's SSH-run log; back-dated via `Activity.SetStartTime` / `SetEndTime` so Jaeger waterfalls show per-prompt granularity.
 - **DeliverStage cleans VM dirs (PR #16)**: workers get a fresh `plans/` + `output/` each run. Shipped alongside the OpenAI-key leak incident that motivated PR #17.
 - **Secret scanner + CI second-line (PR #17, open -- ready to merge)**: `infra/check-staged-secrets.ps1` as a local pre-commit hook (`.githooks/`) plus a `secrets-scan` GitHub Actions job. Patterns: OpenAI (legacy + project), Anthropic, GitHub, Slack, AWS, PEM. Allowlist: `.example` / `.template` / `.lock`, `infra/secret-scan-test-fixtures/`, per-line `secret-scan: ignore`. Self-test: `.\infra\check-staged-secrets.ps1 -Test` = 4 positives, 3 negatives. First-time setup: `.\scripts\install-githooks.ps1`.
-- **Tests**: 133 green (128 unit + 5 integration with NatsServerFixture).
+- **Tests**: 157 green (152 unit + 5 integration with NatsServerFixture).
 
 ## Backlog (not started)
 
@@ -59,7 +60,7 @@ C:\work\iso\planning-runtime\
 
 - **SSH key path.** `FarmerSettings.SshKeyPath` defaults to `id_ed25519`. The legacy `id_rsa` is encrypted with a passphrase on this machine, and `Renci.SshNet.PrivateKeyFile` can't talk to `ssh-agent`. Don't "fix" this by changing to `id_rsa` — it will fail at `Deliver` stage with `SshPassPhraseNullOrEmptyException`.
 - **SSH uses absolute paths for SCP destinations.** `Renci.SshNet`'s `ScpClient` does NOT expand `~`. The VM config uses `/home/claude/projects` as `RemoteProjectPath`, not `~/projects`. See [commit `a3c3c5b`](../git) on the verification branch for history.
-- **Mapped drive is read-only from Windows.** Writes to VM always go through SSH/SCP. Reads come through the mapped drive (`O:\projects\` for `claudefarm2`). There's a ~500ms SSHFS cache lag that `MappedDriveReader` handles with a retry loop.
+- **Worker readback is SSH-based (as of Phase 7 Stream D).** `SshWorkerFileReader` handles `cat`/`test -f`/`ls -1` over `Renci.SshNet` for Collect + Retrospective stages. The old `MappedDriveReader` (WinFsp/SSHFS-Win / mapped drive letter) is dead code pending deletion; `VmConfig.MappedDriveLetter` / `MappedDrivePath` / `FarmerSettings.SshfsCacheLagMs` are unused. Writes to VM still go through SSH/SCP as before.
 - **`CollectStage` rejects empty `files_changed`**. Phase 5 fake workers used sentinel strings (`FAKE_WORKER_NO_REAL_CHANGES`) to satisfy this. Phase 6 workers will populate `Manifest.Outputs[]` AND leave `files_changed` non-empty for back-compat. See [ADR-003](./docs/adr/adr-003-anti-drift-contract.md) and `CollectStage.cs`.
 - **Three-file anti-drift invariant.** `events.jsonl`, `state.json`, and `result.json` must agree on the final phase and stages_completed list. Two regression tests (`BugRegression_*`) pin this. See [ADR-003](./docs/adr/adr-003-anti-drift-contract.md) for the full history of why.
 - **Middleware ordering matters.** `WorkflowPipelineFactory` builds the middleware list in this exact order: `Telemetry → Logging → Eventing → [fresh CostTracking] → Heartbeat`. Don't reorder. `CostTrackingMiddleware` is `new`'d inline per-run (see [ADR-004](./docs/adr/adr-004-workflow-pipeline-factory.md)) and is NOT in DI.
