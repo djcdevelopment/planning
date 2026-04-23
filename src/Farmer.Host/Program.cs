@@ -83,6 +83,9 @@ builder.Services.AddCors(options =>
         .AllowAnyHeader());
 });
 
+// --- Stream J (Phase Demo) read-side: scans runs/ for the reveal UI ---
+builder.Services.AddSingleton<RunsBrowserService>();
+
 // --- OpenTelemetry ---
 var otelResource = ResourceBuilder.CreateDefault()
     .AddService(telemetrySettings.ServiceName, serviceVersion: "0.1.0");
@@ -128,11 +131,10 @@ app.MapGet("/", () => Results.Ok(new
     phase = "Phase 6 - Retrospective Loop"
 }));
 
-app.MapGet("/runs/{runId}", async (string runId, IRunStore store) =>
-{
-    var state = await store.GetRunStateAsync(runId);
-    return state is not null ? Results.Ok(state) : Results.NotFound();
-});
+// Legacy /runs/{runId} -> state.json passthrough has been superseded by the
+// Stream J reveal endpoints below, which return a richer composite document
+// (summary + artifacts + retro + directives + trace_id). Consumers that need
+// the raw RunStatus can still hit /runs/{id}/file/state.json.
 
 app.MapPost("/trigger", async (
     HttpContext ctx,
@@ -169,5 +171,84 @@ app.MapPost("/trigger", async (
         if (File.Exists(tempFile)) File.Delete(tempFile);
     }
 });
+
+// ================================================================
+// Stream J (Phase Demo) — reveal UI endpoints + static files.
+// Keep this block self-contained so Stream H (CORS + /trigger + prompts_inline)
+// can merge alongside without touching the lines below.
+//
+// Contract:
+//   GET /runs                           → summary array (last 20 by mtime)
+//   GET /runs/{id}                      → full detail (summary + artifacts + retro + directives)
+//   GET /runs/{id}/file/{**path}        → file content, sandboxed under runDir
+//   /demo/*                             → static assets (demo/reveal.html + siblings)
+//
+// CORS: this block does not register a CORS policy. Stream H owns CORS for
+// Program.cs; when its UseCors(...) lands globally, these endpoints inherit
+// it. If Stream H's policy uses a named policy, add .RequireCors("...") to
+// the individual MapGet calls below.
+// ================================================================
+
+app.MapGet("/runs", (RunsBrowserService browser) =>
+{
+    var summaries = browser.ListRecent(take: 20);
+    return Results.Ok(summaries);
+});
+
+app.MapGet("/runs/{id}", (string id, RunsBrowserService browser) =>
+{
+    var detail = browser.TryLoadDetail(id);
+    return detail is not null ? Results.Ok(detail) : Results.NotFound();
+});
+
+// Trailing-path route: {**path} captures slashes so callers can request
+// nested files like /runs/{id}/file/artifacts/subdir/foo.md in one request.
+app.MapGet("/runs/{id}/file/{**path}", (string id, string path, RunsBrowserService browser) =>
+{
+    if (!browser.TryResolveRunFile(id, path, out var fullPath))
+        return Results.NotFound();
+
+    // Content-type is deliberately text/plain for the demo: the reveal UI
+    // renders everything as <pre> or in an iframe; a .md or .json served
+    // as text/plain is fine. Binary artifacts (none currently produced) would
+    // need a content-type sniff before we ship beyond this demo.
+    return Results.File(fullPath, contentType: "text/plain; charset=utf-8");
+});
+
+// Static files for the reveal UI, served from the repo's demo/ directory
+// next to the Farmer.sln. Resolved relative to the process current dir
+// (dotnet runs from src/Farmer.Host/) by walking up to the repo root. If
+// we can't find it, silently skip — the UI will still work when opened
+// via file:///.
+var demoDir = FindDemoDirectory(AppContext.BaseDirectory);
+if (demoDir is not null)
+{
+    var provider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(demoDir);
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = provider,
+        RequestPath = "/demo",
+        ServeUnknownFileTypes = true,
+        DefaultContentType = "text/plain; charset=utf-8",
+    });
+}
+
+static string? FindDemoDirectory(string startDir)
+{
+    // Walk up from the binary output dir looking for a sibling "demo/" folder.
+    // Works for `dotnet run` (bin/Debug/net9.0) and `dotnet publish` layouts.
+    var cursor = new DirectoryInfo(startDir);
+    for (int i = 0; i < 8 && cursor is not null; i++, cursor = cursor.Parent)
+    {
+        var candidate = Path.Combine(cursor.FullName, "demo");
+        if (Directory.Exists(candidate))
+            return candidate;
+    }
+    return null;
+}
+
+// ================================================================
+// End Stream J block.
+// ================================================================
 
 app.Run("http://localhost:5100");

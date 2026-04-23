@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Farmer Reveal — Phase Demo</title>
+  <link rel="stylesheet" href="reveal.css" />
+</head>
+<body>
+  <!--
+    Stream J (Phase Demo) — reveal UI.
+
+    Single-page vanilla JS. No framework, no build step. Opens either via
+      file:///C:/work/iso/planning/demo/reveal.html
+    or, when Farmer.Host is serving /demo/ as static files,
+      http://localhost:5100/demo/reveal.html
+
+    Data source: Farmer.Host's Stream J endpoints
+      GET /runs                       -- sidebar list
+      GET /runs/{id}                  -- selected run detail
+      GET /runs/{id}/file/{**path}    -- file content (lazy-fetched)
+    Re-run action: POST /trigger      -- Stream H's prompts_inline schema
+
+    The API base defaults to window.location.origin when served from the
+    Host, and to http://localhost:5100 when opened via file://. Override
+    by appending ?api=http://other-host:5100 to the URL.
+  -->
+
+  <header class="topbar">
+    <div class="brand">Farmer <span class="brand-sub">reveal</span></div>
+    <div class="topbar-actions">
+      <label class="auto-refresh">
+        <input type="checkbox" id="auto-refresh" checked />
+        auto-refresh (5s)
+      </label>
+      <button id="refresh-now" class="btn btn-ghost" title="Refresh run list now">refresh</button>
+      <span id="api-base" class="api-base" title="API base URL"></span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span id="run-count" class="run-count">—</span>
+        <span class="run-count-label">recent runs</span>
+      </div>
+      <ul id="run-list" class="run-list">
+        <li class="run-list-empty">Loading...</li>
+      </ul>
+    </aside>
+
+    <section class="main">
+      <div id="empty-state" class="empty-state">
+        <h2>Select a run</h2>
+        <p>Pick a row on the left to see its trace, artifacts, retrospective, and directives.</p>
+      </div>
+
+      <article id="run-detail" class="run-detail hidden">
+        <header class="run-header">
+          <div class="run-header-main">
+            <h2 id="rd-title" class="run-title">—</h2>
+            <div class="run-meta">
+              <span id="rd-verdict" class="verdict-badge">—</span>
+              <span id="rd-risk" class="meta-chip">risk: —</span>
+              <span id="rd-duration" class="meta-chip">duration: —</span>
+              <span id="rd-stages" class="meta-chip">stages: —</span>
+            </div>
+            <div class="run-id-row">
+              <code id="rd-run-id" class="run-id-mono">—</code>
+              <code id="rd-path" class="run-path-mono"></code>
+            </div>
+          </div>
+        </header>
+
+        <nav class="tab-bar">
+          <button class="tab active" data-tab="trace">Trace</button>
+          <button class="tab" data-tab="artifacts">Artifacts</button>
+          <button class="tab" data-tab="retro">Retrospective</button>
+          <button class="tab" data-tab="directives">Directives</button>
+        </nav>
+
+        <!-- Trace tab -->
+        <section class="tab-panel active" data-panel="trace">
+          <div id="trace-container">
+            <div id="trace-missing" class="notice hidden">
+              No <code>trace_id</code> was found in this run's <code>events.jsonl</code>.
+              Open Jaeger directly at
+              <a id="trace-jaeger-link" href="http://localhost:16686" target="_blank" rel="noreferrer">
+                http://localhost:16686
+              </a>
+              and search by run id.
+            </div>
+            <iframe id="trace-iframe" class="trace-iframe hidden" title="Jaeger trace waterfall"></iframe>
+          </div>
+        </section>
+
+        <!-- Artifacts tab -->
+        <section class="tab-panel" data-panel="artifacts">
+          <div class="panel-hint" id="artifacts-source">—</div>
+          <ul id="artifact-list" class="artifact-list"></ul>
+        </section>
+
+        <!-- Retrospective tab -->
+        <section class="tab-panel" data-panel="retro">
+          <div class="retro-grid">
+            <div class="retro-col">
+              <h3>qa-retro.md</h3>
+              <pre id="retro-md" class="retro-pre">—</pre>
+            </div>
+            <div class="retro-col">
+              <h3>review.json</h3>
+              <div id="review-summary" class="review-summary"></div>
+              <pre id="review-raw" class="retro-pre">—</pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- Directives tab -->
+        <section class="tab-panel" data-panel="directives">
+          <div class="panel-hint">
+            Click <strong>Apply + re-run</strong> on a card to trigger a new run with
+            this directive prepended as <code>0-feedback.md</code>.
+          </div>
+          <div id="directive-cards" class="directive-cards"></div>
+          <div id="directive-empty" class="notice hidden">
+            No directive-suggestions.md present for this run.
+          </div>
+        </section>
+      </article>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="reveal.js"></script>
+</body>
+</html>
