@@ -90,26 +90,42 @@ PROGRESS
 write_manifest() {
   local status="$1"
   local files_json
-  # Compute files_changed from git status
+  # Compute files_changed from git status.
+  # Filter toolchain noise (virtualenvs, node_modules, caches) — those aren't
+  # "what the worker built" and pulling them all in blew past jq's ARG_MAX
+  # on Python/JS runs (2600+ files = 200KB+ arg). Keep the manifest focused
+  # on source files the retrospective agent should review.
   cd "$PROJECT_ROOT"
   git add -A 2>/dev/null
-  files_json=$(git status --porcelain=v1 2>/dev/null | awk '{print $2}' | sort -u | jq -R -s 'split("\n") | map(select(length > 0))' 2>/dev/null)
-  if [ -z "$files_json" ] || [ "$files_json" = "[]" ]; then
-    files_json='["WORKER_NO_CHANGES"]'
+  # Write the raw file list to a temp file + feed it via --slurpfile so we
+  # never hit ARG_MAX even if a sample plan generates a huge source tree.
+  local files_list_tmp="$OUTPUT_DIR/.manifest-files.tmp"
+  git status --porcelain=v1 2>/dev/null \
+    | awk '{print $2}' \
+    | grep -vE '^(\.venv/|venv/|node_modules/|\.pytest_cache/|__pycache__/|\.gradle/|\.git/|dist/|build/|target/|bin/|obj/|\.next/|\.nuxt/|\.cache/|coverage/|\.egg-info/|\.mypy_cache/|\.ruff_cache/|\.tox/)' \
+    | sort -u \
+    | jq -R -s 'split("\n") | map(select(length > 0))' \
+    > "$files_list_tmp" 2>/dev/null
+
+  # Fallback to sentinel if filtered list is empty or write failed
+  if [ ! -s "$files_list_tmp" ] || [ "$(cat "$files_list_tmp" 2>/dev/null)" = "[]" ]; then
+    echo '["WORKER_NO_CHANGES"]' > "$files_list_tmp"
   fi
 
   jq -n \
     --arg run_id "$RUN_ID" \
-    --argjson files "$files_json" \
+    --slurpfile files "$files_list_tmp" \
     --arg ts "$(date -u -Iseconds)" \
     --arg status "$status" \
     '{
       run_id: $run_id,
-      files_changed: $files,
+      files_changed: $files[0],
       branch_name: "",
       commit_sha: null,
       generated_at: $ts
     }' > "$OUTPUT_DIR/manifest.json"
+
+  rm -f "$files_list_tmp"
 }
 
 # --- Summary writer ---
