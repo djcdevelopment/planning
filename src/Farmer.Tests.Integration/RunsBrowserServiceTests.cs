@@ -218,21 +218,61 @@ public class RunsBrowserServiceTests : IDisposable
         Assert.False(_svc.TryResolveRunFile("run-dir", "artifacts", out _));
     }
 
+    [Fact]
+    public void ListRecent_SurfacesUserIdFromRequestJson()
+    {
+        // Phase Demo v2 Stream 3: runs stamped with user_id on request.json
+        // surface that value on the summary so a B2C-aware UI can filter
+        // per-caller history.
+        CreateRun("run-alice", withResult: true, withReview: true, userId: "alice-oid");
+        CreateRun("run-anon", withResult: true, withReview: true, userId: null);
+
+        var list = _svc.ListRecent();
+
+        Assert.Equal(2, list.Count);
+        var alice = Assert.Single(list, s => s.RunId == "run-alice");
+        Assert.Equal("alice-oid", alice.UserId);
+        var anon = Assert.Single(list, s => s.RunId == "run-anon");
+        Assert.Null(anon.UserId);
+    }
+
+    [Fact]
+    public void TryLoadDetail_SurfacesUserIdFromRequestJson()
+    {
+        CreateRun("run-detail-user", withResult: true, withReview: true, userId: "bob-oid");
+
+        var detail = _svc.TryLoadDetail("run-detail-user");
+
+        Assert.NotNull(detail);
+        Assert.Equal("bob-oid", detail!.Summary.UserId);
+    }
+
     // --- helpers ---
 
-    private string CreateRun(string runId, bool withResult, bool withReview, string verdict = "Accept", int riskScore = 5)
+    private string CreateRun(string runId, bool withResult, bool withReview, string verdict = "Accept", int riskScore = 5, string? userId = null)
     {
         var runDir = Path.Combine(_runsDir, runId);
         Directory.CreateDirectory(runDir);
         Directory.CreateDirectory(Path.Combine(runDir, "logs"));
         Directory.CreateDirectory(Path.Combine(runDir, "artifacts"));
 
-        File.WriteAllText(Path.Combine(runDir, "request.json"), JsonSerializer.Serialize(new
-        {
-            run_id = runId,
-            work_request_name = "demo-" + runId,
-            created_at = DateTimeOffset.UtcNow,
-        }, JsonOpts));
+        // Serialize request.json with or without user_id so back-compat (runs
+        // persisted before the field existed) stays covered too.
+        object requestDoc = userId is null
+            ? (object)new
+            {
+                run_id = runId,
+                work_request_name = "demo-" + runId,
+                created_at = DateTimeOffset.UtcNow,
+            }
+            : new
+            {
+                run_id = runId,
+                work_request_name = "demo-" + runId,
+                user_id = userId,
+                created_at = DateTimeOffset.UtcNow,
+            };
+        File.WriteAllText(Path.Combine(runDir, "request.json"), JsonSerializer.Serialize(requestDoc, JsonOpts));
 
         if (withResult)
         {

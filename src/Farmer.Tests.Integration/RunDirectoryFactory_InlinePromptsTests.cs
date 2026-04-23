@@ -116,5 +116,33 @@ public class RunDirectoryFactory_InlinePromptsTests : IDisposable
 
         Assert.Equal("react-grid-component", req.WorkRequestName);
         Assert.Null(req.PromptsInline);
+        // Phase Demo v2 Stream 3: back-compat asserts user_id stays null
+        // when the caller doesn't set it.
+        Assert.Null(req.UserId);
+    }
+
+    [Fact]
+    public async Task UserId_on_trigger_body_is_persisted_to_request_json()
+    {
+        // Phase Demo v2 Stream 3: "user_id" on the JSON body is captured
+        // verbatim into the persisted RunRequest so the UI can filter
+        // run history per caller.
+        var triggerFile = Path.Combine(_runsDir, "trigger-user.json");
+        var trigger = new
+        {
+            work_request_name = "demo-per-user",
+            source = "phone",
+            user_id = "alice-b2c-oid",
+        };
+        await File.WriteAllTextAsync(triggerFile, JsonSerializer.Serialize(trigger, JsonOpts));
+
+        var runDir = await _factory.CreateFromInboxFileAsync(triggerFile);
+
+        var reqJson = await File.ReadAllTextAsync(Path.Combine(runDir, "request.json"));
+        var req = JsonSerializer.Deserialize<RunRequest>(reqJson, JsonOpts)!;
+
+        Assert.Equal("alice-b2c-oid", req.UserId);
+        // Raw text assert too: snake_case on the wire is the stable contract.
+        Assert.Contains("\"user_id\": \"alice-b2c-oid\"", reqJson);
     }
 }

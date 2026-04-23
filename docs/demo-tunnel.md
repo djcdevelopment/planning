@@ -77,6 +77,35 @@ This requires no pre-existing `sample-plans/live-demo/` directory —
 LoadPromptsStage uses the inline prompts directly. `work_request_name` is
 still used for the run's display name in retrospective metadata.
 
+## Auto-publishing the URL to Azure Blob (Phase Demo v2)
+
+Because the `trycloudflare.com` slug changes on every restart, the v2
+architecture publishes the ephemeral URL to an Azure Blob so the
+Azure-hosted front-end can auto-discover it — the friend never sees a
+tunnel URL.
+
+One-time provisioning:
+
+```powershell
+.\infra\setup-tunnel-blob.ps1
+# Or with explicit names:
+.\infra\setup-tunnel-blob.ps1 -ResourceGroup rg-farmer-dev -StorageAccount farmertunnelXYZ
+```
+
+The script creates a StandardLRS/StorageV2 storage account, a
+`tunnel-state` container, and a SAS URL for `current.json` valid for one
+year. It writes the SAS to `infra/.tunnel-blob-url.txt` (gitignored) and
+prints a one-liner to persist it as a user-scope env var:
+
+```powershell
+[Environment]::SetEnvironmentVariable("FARMER_TUNNEL_BLOB_URL", "<sas>", "User")
+```
+
+After that, every `.\infra\start-tunnel.ps1` invocation PUTs
+`{"url":"...","updated_at":"..."}` to the blob right after the
+`TUNNEL_URL:` line. When `FARMER_TUNNEL_BLOB_URL` is unset, the upload
+is skipped with a single log line — local development keeps working.
+
 ## Persistent URL — named tunnel (for later, not tonight)
 
 The ephemeral tunnel is fine for one evening of drinks. For a URL that

@@ -102,6 +102,30 @@ $handleLine = {
             } catch {
                 Write-Warning "Failed to write $urlFile : $_"
             }
+
+            # Phase Demo v2 Stream 3: auto-publish the ephemeral URL to Azure
+            # Blob so the Azure-hosted front-end can pick it up without the
+            # user ever seeing / pasting it. Skipped silently when the
+            # storage SAS isn't configured — local development still works.
+            $blobSas = $env:FARMER_TUNNEL_BLOB_URL
+            if ([string]::IsNullOrWhiteSpace($blobSas)) {
+                Write-Host "Skipping blob upload -- FARMER_TUNNEL_BLOB_URL not set" -ForegroundColor DarkGray
+            } else {
+                try {
+                    $payload = [ordered]@{
+                        url        = $url
+                        updated_at = (Get-Date).ToUniversalTime().ToString('o')
+                    } | ConvertTo-Json -Compress
+                    $headers = @{
+                        'x-ms-blob-type' = 'BlockBlob'
+                    }
+                    Invoke-RestMethod -Method Put -Uri $blobSas -Headers $headers `
+                        -ContentType 'application/json' -Body $payload | Out-Null
+                    Write-Host "Published tunnel URL to Azure Blob" -ForegroundColor Green
+                } catch {
+                    Write-Warning "Failed to publish tunnel URL to blob: $_"
+                }
+            }
         }
     }
 }

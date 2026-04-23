@@ -143,6 +143,22 @@ app.MapPost("/trigger", async (
 {
     using var reader = new StreamReader(ctx.Request.Body);
     var body = await reader.ReadToEndAsync();
+
+    // Phase Demo v2 Stream 3: attribute the run to a caller.
+    //
+    // Contract: the JSON body's "user_id" field is the canonical source. The
+    // X-Farmer-User-Id header is a curl convenience; when present and the body
+    // is silent (or empty), we splice the header value into the body before
+    // handing the trigger file to the RetryDriver. If BOTH are set, the body
+    // wins — the cleaner JSON contract beats the out-of-band header.
+    //
+    // Farmer does NOT validate the value. The trust boundary is the tunnel /
+    // authenticating proxy in front of Farmer; demo posture.
+    var headerUserId = ctx.Request.Headers.TryGetValue("X-Farmer-User-Id", out var hv)
+        ? hv.ToString()
+        : null;
+    body = TriggerBodyEnricher.MergeHeaderUserIdIntoBody(body, headerUserId);
+
     var tempFile = Path.GetTempFileName();
     await File.WriteAllTextAsync(tempFile, body);
 
@@ -246,6 +262,7 @@ static string? FindDemoDirectory(string startDir)
     }
     return null;
 }
+
 
 // ================================================================
 // End Stream J block.
