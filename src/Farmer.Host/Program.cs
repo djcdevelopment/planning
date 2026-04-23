@@ -37,6 +37,7 @@ builder.Services.AddSingleton<ReserveVmStage>();
 builder.Services.AddSingleton<DeliverStage>();
 builder.Services.AddSingleton<DispatchStage>();
 builder.Services.AddSingleton<CollectStage>();
+builder.Services.AddSingleton<ArchiveStage>();
 builder.Services.AddSingleton<RetrospectiveStage>();
 
 // --- Stateless middleware (resolved by WorkflowPipelineFactory) ---
