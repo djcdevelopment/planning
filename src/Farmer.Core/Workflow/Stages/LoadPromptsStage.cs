@@ -21,32 +21,63 @@ public sealed class LoadPromptsStage : IWorkflowStage
 
     public async Task<StageResult> ExecuteAsync(RunFlowState state, CancellationToken ct = default)
     {
-        var planDir = Path.Combine(_settings.Paths.SamplePlansPath, state.WorkRequestName);
+        // Inline-prompts fast path: when the caller supplied prompts on the
+        // /trigger body, skip the disk scan entirely. This path exists so
+        // clients that have no shared filesystem with Farmer.Host (phone /
+        // browser / tunnel) can still drive a run. state.WorkRequestName is
+        // still used for the run's display / metadata; only the prompt
+        // *source* changes. See docs/phase-demo-plan.md.
+        var inline = state.RunRequest?.PromptsInline;
+        List<PromptFile> prompts;
 
-        if (!Directory.Exists(planDir))
-            return StageResult.Failed(Name, $"Work request directory not found: {planDir}");
-
-        var mdFiles = Directory.GetFiles(planDir, "*.md")
-            .Select(Path.GetFileName)
-            .Where(f => f is not null)
-            .Select(f => f!)
-            .Where(f => char.IsDigit(f[0]))
-            .OrderBy(f => ParseNumericPrefix(f))
-            .ToList();
-
-        if (mdFiles.Count == 0)
-            return StageResult.Failed(Name, $"No numbered prompt files found in {planDir}");
-
-        var prompts = new List<PromptFile>();
-        foreach (var filename in mdFiles)
+        if (inline is { Count: > 0 })
         {
-            var content = await File.ReadAllTextAsync(Path.Combine(planDir, filename), ct);
-            prompts.Add(new PromptFile
+            prompts = new List<PromptFile>(inline.Count);
+            for (var i = 0; i < inline.Count; i++)
             {
-                Order = ParseNumericPrefix(filename),
-                Filename = filename,
-                Content = content
-            });
+                var item = inline[i];
+                var filename = string.IsNullOrWhiteSpace(item.Filename)
+                    ? $"{i + 1}-inline.md"
+                    : item.Filename;
+                prompts.Add(new PromptFile
+                {
+                    // 1-indexed by list position. Inline callers choose order
+                    // by array position, not by filename numeric prefix.
+                    Order = i + 1,
+                    Filename = filename,
+                    Content = item.Content ?? string.Empty,
+                });
+            }
+        }
+        else
+        {
+            var planDir = Path.Combine(_settings.Paths.SamplePlansPath, state.WorkRequestName);
+
+            if (!Directory.Exists(planDir))
+                return StageResult.Failed(Name, $"Work request directory not found: {planDir}");
+
+            var mdFiles = Directory.GetFiles(planDir, "*.md")
+                .Select(Path.GetFileName)
+                .Where(f => f is not null)
+                .Select(f => f!)
+                .Where(f => char.IsDigit(f[0]))
+                .OrderBy(f => ParseNumericPrefix(f))
+                .ToList();
+
+            if (mdFiles.Count == 0)
+                return StageResult.Failed(Name, $"No numbered prompt files found in {planDir}");
+
+            prompts = new List<PromptFile>();
+            foreach (var filename in mdFiles)
+            {
+                var content = await File.ReadAllTextAsync(Path.Combine(planDir, filename), ct);
+                prompts.Add(new PromptFile
+                {
+                    Order = ParseNumericPrefix(filename),
+                    Filename = filename,
+                    Content = content
+                });
+            }
         }
 
         // Retry feedback injection: when the caller populated RunRequest.Feedback
