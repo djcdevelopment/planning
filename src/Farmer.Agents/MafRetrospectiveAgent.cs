@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization;
 using Azure.AI.OpenAI;
 using Azure.Identity;
@@ -11,6 +12,10 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+
+// Phase 7.5 Stream E: let the test project call into the internal artifact-
+// loader + test-seam ctor without exposing them on the public surface.
+[assembly: InternalsVisibleTo("Farmer.Tests")]
 
 namespace Farmer.Agents;
 
@@ -80,6 +85,24 @@ public sealed class MafRetrospectiveAgent : IRetrospectiveAgent
         _logger = logger;
     }
 
+    /// <summary>
+    /// Test seam for the artifact-loader path only. The lazy agent is
+    /// left unbuilt — these tests never call <see cref="AnalyzeAsync"/>.
+    /// Subclassing the MAF <see cref="AIAgent"/> with a no-op stub would
+    /// require implementing five abstract members whose shapes drift
+    /// with every MAF release; this ctor lets tests exercise
+    /// <see cref="LoadSourceFiles"/> without that ceremony.
+    /// </summary>
+    internal MafRetrospectiveAgent(
+        IOptions<RetrospectiveSettings> settings,
+        ILogger<MafRetrospectiveAgent> logger)
+    {
+        _agentLazy = new Lazy<AIAgent?>(() => null);
+        _openAi = new OpenAISettings();
+        _settings = settings.Value;
+        _logger = logger;
+    }
+
     private AIAgent? TryBuildAgent()
     {
         if (string.IsNullOrWhiteSpace(_openAi.Endpoint) ||
@@ -126,7 +149,12 @@ public sealed class MafRetrospectiveAgent : IRetrospectiveAgent
         using var activity = FarmerActivitySource.StartAgentReview(
             context.RunId, "FarmerRetrospectiveAgent");
 
-        var userMessage = RetrospectivePrompt.BuildUserMessage(context);
+        // Load source files from the run's artifacts/ directory. Phase 7.5
+        // Stream G's ArchiveStage populates it at runtime; if empty (or
+        // absent), the agent degrades gracefully and the prompt says so.
+        var sourceFiles = LoadSourceFiles(context, out var totalSourceFiles);
+        var userMessage = RetrospectivePrompt.BuildUserMessage(
+            context, sourceFiles, totalSourceFiles);
         var maxAttempts = _settings.MaxAgentCallRetries + 1;
         var attemptsMade = 0;
         var inputTokens = 0;
@@ -208,6 +236,197 @@ public sealed class MafRetrospectiveAgent : IRetrospectiveAgent
             InputTokens = inputTokens,
             OutputTokens = outputTokens,
         };
+    }
+
+    /// <summary>
+    /// Enumerate the run's <c>artifacts/</c> directory, load up to
+    /// <see cref="RetrospectiveSettings.MaxChangedFiles"/> files bounded at
+    /// <see cref="RetrospectiveSettings.MaxFileBytes"/> bytes each, and
+    /// return them as <see cref="ArtifactSnippet"/>s for the prompt.
+    ///
+    /// Defensive: null/empty/missing artifacts dir returns an empty list
+    /// and a single info-level log line. Individual file-read failures
+    /// are swallowed (warn) so one unreadable file doesn't starve the
+    /// prompt of the rest.
+    ///
+    /// Enumeration prefers <c>artifacts-index.json</c> if Stream G wrote
+    /// one (contains the worker-declared order + paths), otherwise falls
+    /// back to a deterministic directory walk. Binary-looking files are
+    /// skipped to keep the prompt text-safe.
+    /// </summary>
+    internal IReadOnlyList<ArtifactSnippet> LoadSourceFiles(
+        RetrospectiveContext context, out int totalAvailable)
+    {
+        totalAvailable = 0;
+        var dir = context.ArtifactsDirectory;
+
+        if (string.IsNullOrWhiteSpace(dir))
+        {
+            _logger.LogInformation(
+                "Retrospective for run {RunId}: no artifacts directory provided — " +
+                "reasoning from manifest + summary only.", context.RunId);
+            return Array.Empty<ArtifactSnippet>();
+        }
+
+        if (!Directory.Exists(dir))
+        {
+            _logger.LogInformation(
+                "Retrospective for run {RunId}: artifacts directory {Dir} does not exist — " +
+                "reasoning from manifest + summary only.", context.RunId, dir);
+            return Array.Empty<ArtifactSnippet>();
+        }
+
+        List<string> candidatePaths;
+        try
+        {
+            candidatePaths = EnumerateArtifactPaths(dir).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Retrospective for run {RunId}: failed to enumerate {Dir}; " +
+                "continuing without source.", context.RunId, dir);
+            return Array.Empty<ArtifactSnippet>();
+        }
+
+        totalAvailable = candidatePaths.Count;
+        if (totalAvailable == 0)
+        {
+            _logger.LogInformation(
+                "Retrospective for run {RunId}: artifacts directory {Dir} is empty — " +
+                "reasoning from manifest + summary only.", context.RunId, dir);
+            return Array.Empty<ArtifactSnippet>();
+        }
+
+        var maxFiles = Math.Max(0, _settings.MaxChangedFiles);
+        var maxBytes = Math.Max(0, _settings.MaxFileBytes);
+        var taken = candidatePaths.Take(maxFiles);
+        var snippets = new List<ArtifactSnippet>(Math.Min(maxFiles, totalAvailable));
+
+        foreach (var absPath in taken)
+        {
+            try
+            {
+                var info = new FileInfo(absPath);
+                if (!info.Exists) continue;
+                var content = ReadBoundedText(absPath, maxBytes, out var truncated);
+                var relative = Path.GetRelativePath(dir, absPath).Replace('\\', '/');
+                snippets.Add(new ArtifactSnippet
+                {
+                    Path = relative,
+                    Content = content,
+                    TotalBytes = info.Length,
+                    Truncated = truncated,
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Retrospective for run {RunId}: could not read {Path}; skipping.",
+                    context.RunId, absPath);
+            }
+        }
+
+        return snippets;
+    }
+
+    /// <summary>
+    /// Prefer <c>artifacts-index.json</c> written by Stream G when it exists;
+    /// otherwise walk the directory recursively in sorted order. Either way,
+    /// return absolute paths — the caller resolves the relative path against
+    /// the artifacts dir. Index format is intentionally loose: we accept
+    /// either a JSON array of strings or an object with a "files" array.
+    /// </summary>
+    private static IEnumerable<string> EnumerateArtifactPaths(string artifactsDir)
+    {
+        var indexPath = Path.Combine(artifactsDir, "artifacts-index.json");
+        if (File.Exists(indexPath))
+        {
+            List<string>? fromIndex = null;
+            try
+            {
+                fromIndex = ReadArtifactsIndex(indexPath, artifactsDir);
+            }
+            catch
+            {
+                // Malformed index — fall back to directory walk.
+            }
+            if (fromIndex is { Count: > 0 }) return fromIndex;
+        }
+
+        return Directory.EnumerateFiles(artifactsDir, "*", SearchOption.AllDirectories)
+            .Where(p => !string.Equals(
+                Path.GetFileName(p), "artifacts-index.json", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(p => p, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static List<string> ReadArtifactsIndex(string indexPath, string artifactsDir)
+    {
+        var json = File.ReadAllText(indexPath);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        var items = new List<string>();
+
+        System.Text.Json.JsonElement array = default;
+        var hasArray = false;
+        if (root.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            array = root;
+            hasArray = true;
+        }
+        else if (root.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                 root.TryGetProperty("files", out var filesEl) &&
+                 filesEl.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            array = filesEl;
+            hasArray = true;
+        }
+
+        if (!hasArray) return items;
+
+        foreach (var el in array.EnumerateArray())
+        {
+            string? relative = el.ValueKind switch
+            {
+                System.Text.Json.JsonValueKind.String => el.GetString(),
+                System.Text.Json.JsonValueKind.Object when el.TryGetProperty("path", out var p) =>
+                    p.GetString(),
+                _ => null,
+            };
+            if (string.IsNullOrWhiteSpace(relative)) continue;
+            var abs = Path.GetFullPath(Path.Combine(artifactsDir, relative));
+            if (File.Exists(abs)) items.Add(abs);
+        }
+        return items;
+    }
+
+    /// <summary>
+    /// Read at most <paramref name="maxBytes"/> bytes from a UTF-8 text file.
+    /// Truncated text returns with <paramref name="truncated"/> = true.
+    /// Decodes UTF-8 with replacement for invalid sequences so a stray
+    /// binary doesn't blow up the prompt builder.
+    /// </summary>
+    private static string ReadBoundedText(string path, int maxBytes, out bool truncated)
+    {
+        truncated = false;
+        if (maxBytes <= 0) return string.Empty;
+
+        using var fs = File.OpenRead(path);
+        var total = fs.Length;
+        var toRead = (int)Math.Min(total, maxBytes);
+        var buf = new byte[toRead];
+        var read = 0;
+        while (read < toRead)
+        {
+            var n = fs.Read(buf, read, toRead - read);
+            if (n <= 0) break;
+            read += n;
+        }
+        truncated = total > read;
+        var enc = new System.Text.UTF8Encoding(
+            encoderShouldEmitUTF8Identifier: false,
+            throwOnInvalidBytes: false);
+        return enc.GetString(buf, 0, read);
     }
 
     private static ReviewVerdict BuildVerdict(string runId, RetrospectiveDto dto)

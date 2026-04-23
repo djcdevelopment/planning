@@ -12,15 +12,23 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.0" />
     <PackageReference Include="xunit" Version="2.9.0" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <!-- Phase 7.5 Stream E: bumped to 10.x to match the Farmer.Agents
+         project graph (MAF packages are on the 10.x Extensions line). The
+         8.x pins here caused NU1605 downgrade errors once Farmer.Tests
+         started referencing Farmer.Agents for the retro agent tests.
+         Hosting was removed — not used anywhere in tests. -->
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.4" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.3" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Farmer.Core\Farmer.Core.csproj" />
     <ProjectReference Include="..\Farmer.Tools\Farmer.Tools.csproj" />
+    <!-- Phase 7.5 Stream E: MafRetrospectiveAgentTests exercise the agent's
+         artifacts/ → prompt pipeline and the RetrospectivePrompt formatter. -->
+    <ProjectReference Include="..\Farmer.Agents\Farmer.Agents.csproj" />
   </ItemGroup>
 
 </Project>

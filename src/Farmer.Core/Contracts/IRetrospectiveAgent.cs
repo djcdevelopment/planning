@@ -66,6 +66,23 @@ public sealed class RetrospectiveContext
     /// </summary>
     public IReadOnlyList<ArtifactSnippet> SampledOutputs { get; init; } =
         Array.Empty<ArtifactSnippet>();
+
+    /// <summary>
+    /// Host-side path to the run's <c>artifacts/</c> directory, populated
+    /// at runtime by <c>ArchiveStage</c> (Phase 7.5 Stream G). The agent
+    /// enumerates this directory, loads up to
+    /// <c>RetrospectiveSettings.MaxChangedFiles</c> files bounded at
+    /// <c>MaxFileBytes</c> each, and includes them in the LLM prompt as
+    /// clearly-labeled code blocks so the agent can reason from actual
+    /// source rather than just the worker's self-reported manifest +
+    /// summary.
+    ///
+    /// Null when the run has no host-side run directory (in-memory test
+    /// paths); empty directory when ArchiveStage hasn't landed yet or a
+    /// specific run produced no files. In both cases the agent degrades
+    /// gracefully and notes the absence in the prompt.
+    /// </summary>
+    public string? ArtifactsDirectory { get; init; }
 }
 
 /// <summary>
