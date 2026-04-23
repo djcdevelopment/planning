@@ -64,6 +64,31 @@ public static class RetrospectivePrompt
            was captured, say so in your retro and note that your
            reasoning is limited to the manifest + summary.
 
+        7. Do not speculate to fill a gap. When the "Source files produced"
+           section says "None captured for this run," state in your
+           findings that the source was not captured for this run. Do NOT
+           invent claims about the code's contents, unrelated projects,
+           run-ID mismatches, or prompt/worker misalignment — those are
+           speculation without evidence. Treat "source not captured" as a
+           caveat on your verdict, not as evidence of misrouting. An
+           archival race or a worker that wrote nothing both look the same
+           from your seat; say so plainly instead of guessing.
+
+        8. Do not invent cross-references. Do not mention projects, run
+           IDs, filenames, frameworks, or languages that do not appear
+           verbatim in the manifest, summary, worker retro, execution log,
+           or source-files section you received. If you cite something,
+           quote it verbatim from one of those inputs. If you cannot
+           quote it, do not claim it.
+
+        9. Prefer neutral wording when evidence is thin. If the only
+           issue is that source was not captured, choose "retry" with a
+           moderate risk score (around 40-60) over "reject" at 80+. A
+           missing-source run is ambiguous — it could be a real worker
+           failure, or it could be an archival race — not definitely
+           broken. Reserve high risk scores and "reject" for cases where
+           the evidence you DO have shows a concrete problem.
+
         Scoring rubric — risk_score is 0-100:
         - 0-20: worker produced expected output, no red flags
         - 21-40: minor notes, a few small improvements possible
