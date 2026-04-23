@@ -23,7 +23,10 @@ var telemetrySettings = builder.Configuration
 
 // --- Infrastructure services ---
 builder.Services.AddSingleton<ISshService, SshService>();
-builder.Services.AddSingleton<IMappedDriveReader, MappedDriveReader>();
+// IMappedDriveReader: SSH-based reader replaces the mapped-drive (WinFsp/SSHFS-Win)
+// backend. Interface name kept for a clean one-shot commit; rename to
+// IWorkerFileReader is a follow-up. See Phase 7 Stream D.
+builder.Services.AddSingleton<IMappedDriveReader, SshWorkerFileReader>();
 builder.Services.AddSingleton<IRunStore, FileRunStore>();
 builder.Services.AddSingleton<IVmManager, VmManager>();
 

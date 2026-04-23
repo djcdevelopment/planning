@@ -35,7 +35,7 @@ public class DiCompositionTests
 
         // Infrastructure
         services.AddSingleton<ISshService, SshService>();
-        services.AddSingleton<IMappedDriveReader, MappedDriveReader>();
+        services.AddSingleton<IMappedDriveReader, SshWorkerFileReader>();
         services.AddSingleton<IRunStore, FileRunStore>();
         services.AddSingleton<IVmManager, VmManager>();
 
