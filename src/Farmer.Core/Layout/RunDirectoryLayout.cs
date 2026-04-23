@@ -87,10 +87,22 @@ public static class RunDirectoryLayout
     /// </para>
     /// </summary>
     public static string ReaderPathForRunOutput(VmConfig vm, string runId, string relativeFile)
+        => ReaderPathForRunTarget(vm, runId, VmRunOutputDir(vm, runId), relativeFile);
+
+    /// <summary>
+    /// Like <see cref="ReaderPathForRunOutput"/> but targets the per-run workspace ROOT
+    /// (e.g. <c>/home/claude/runs/run-&lt;id&gt;/</c>) rather than the output subdir.
+    /// Used by ArchiveStage to read project-root-relative paths like <c>sqldiff/cli.py</c>
+    /// or <c>pyproject.toml</c> that the worker.sh manifest enumerates from git status.
+    /// </summary>
+    public static string ReaderPathForRunFile(VmConfig vm, string runId, string relativeFile)
+        => ReaderPathForRunTarget(vm, runId, VmRunRoot(vm, runId), relativeFile);
+
+    private static string ReaderPathForRunTarget(VmConfig vm, string runId, string targetDir, string relativeFile)
     {
         var normalized = relativeFile.Replace('\\', '/').TrimStart('/');
         var from = vm.RemoteProjectPath.TrimEnd('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var to = VmRunOutputDir(vm, runId).Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var to = targetDir.Split('/', StringSplitOptions.RemoveEmptyEntries);
 
         int common = 0;
         while (common < from.Length && common < to.Length && from[common] == to[common])

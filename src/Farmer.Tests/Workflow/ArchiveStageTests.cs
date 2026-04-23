@@ -403,6 +403,27 @@ public class ArchiveStageTests : IDisposable
             => Task.FromResult<IReadOnlyList<string>>(
                 _files.Keys.Where(k => k.StartsWith(Normalize(relativePath))).ToList());
 
-        private static string Normalize(string p) => p.Replace('\\', '/');
+        private static string Normalize(string p)
+        {
+            var n = p.Replace('\\', '/');
+            // ArchiveStage routes reads through RunDirectoryLayout.ReaderPathFor*
+            // (Phase 7.5 Stream F + rehearsal-v3 path fix), producing paths like
+            // "../runs/run-<id>/output/manifest.json" that parent-walk from
+            // RemoteProjectPath to the per-run workspace. Tests keep registering
+            // the simpler post-walk form ("output/manifest.json", "src/foo.cs");
+            // we collapse the walk here so lookup still hits. If a future test
+            // sets up a RemoteRunsRoot with a different prefix the marker
+            // below will need to match.
+            var marker = "/runs/";
+            var idx = n.IndexOf(marker, StringComparison.Ordinal);
+            if (idx >= 0)
+            {
+                var afterRunsRoot = idx + marker.Length;
+                var afterRunId = n.IndexOf('/', afterRunsRoot);
+                if (afterRunId >= 0)
+                    n = n.Substring(afterRunId + 1);
+            }
+            return n;
+        }
     }
 }

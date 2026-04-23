@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Farmer.Core.Config;
 using Farmer.Core.Contracts;
+using Farmer.Core.Layout;
 using Farmer.Core.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -91,11 +92,18 @@ public sealed class ArchiveStage : IWorkflowStage
         // Re-read the manifest that CollectStage already validated. Coupling via
         // a side-channel in RunFlowState would be cleaner but is out of scope here:
         // Stream G owns ArchiveStage only; CollectStage belongs to Stream F.
+        //
+        // Resolve via ReaderPathForRunOutput (Stream F helper) so we read from the
+        // per-run workspace, NOT the legacy shared /home/claude/projects/output/.
+        // Without this, the reader base (RemoteProjectPath) made us read a stale
+        // manifest from the old shared dir and every Archive index came back
+        // WORKER_NO_CHANGES even when the per-run manifest on the VM had the right
+        // file list. See phase7.5 retro + phase-demo dress rehearsal v3.
         Manifest? manifest;
         try
         {
-            var manifestJson = await _reader.ReadFileAsync(vm.Name,
-                Path.Combine("output", "manifest.json"), ct);
+            var manifestRel = RunDirectoryLayout.ReaderPathForRunOutput(vm, state.RunId, "manifest.json");
+            var manifestJson = await _reader.ReadFileAsync(vm.Name, manifestRel, ct);
             manifest = JsonSerializer.Deserialize<Manifest>(manifestJson, ManifestJsonOptions);
         }
         catch (Exception ex)
@@ -159,7 +167,13 @@ public sealed class ArchiveStage : IWorkflowStage
             string content;
             try
             {
-                content = await _reader.ReadFileAsync(vm.Name, normalized, ct);
+                // Manifest paths are relative to the per-run workspace root
+                // (worker.sh's PROJECT_ROOT = /home/claude/runs/run-<id>/).
+                // The reader's base is vm.RemoteProjectPath (legacy shared
+                // /home/claude/projects/), so we walk parent-relative to reach
+                // the per-run root before joining the manifest entry.
+                var readerPath = RunDirectoryLayout.ReaderPathForRunFile(vm, state.RunId, normalized);
+                content = await _reader.ReadFileAsync(vm.Name, readerPath, ct);
             }
             catch (OperationCanceledException)
             {
