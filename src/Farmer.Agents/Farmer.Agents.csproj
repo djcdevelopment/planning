@@ -10,20 +10,31 @@
       Microsoft.Extensions.AI.* types. Farmer.Core stays on the stable
       .NET 8 Extensions 8.x line; this project follows MAF's 10.x/1.x lines.
 
-      Provider: OpenAI. Originally planned to use Microsoft.Agents.AI.Anthropic
-      but pivoted to OpenAI for (a) cleaner structured-output path via
-      AgentResponse<T> and (b) better docs. See docs/plan notes.
+      Provider: Azure OpenAI via MAF. Originally planned to use
+      Microsoft.Agents.AI.Anthropic but pivoted to OpenAI for (a) cleaner
+      structured-output path via AgentResponse<T> and (b) better docs.
+      Later (see ADR-006 Update 2026-04-22) the transport moved from the
+      public OpenAI endpoint + API key to Azure OpenAI + Entra via
+      DefaultAzureCredential. The MAF binding is still OpenAI-flavored
+      (Microsoft.Agents.AI.OpenAI 1.1.0) because AzureOpenAIClient shares
+      a base class with OpenAIClient and flows through the same chat-client
+      shape — only the underlying HTTP client changed.
+
       The VM worker is still Claude CLI in full dangerous mode — that's a
       separate concern about VM isolation and worker autonomy, unrelated to
       the host-side retrospective agent's provider choice.
 
-      All packages are STABLE as of April 2026 (1.1.0 / 10.4.1). No preview
-      dependencies in this project. If OpenAI or MAF churn later, the blast
+      All packages are STABLE as of April 2026. No preview dependencies in
+      this project. If OpenAI, Azure SDKs, or MAF churn later, the blast
       radius is still this one project.
     -->
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Azure OpenAI + Entra for the retrospective agent's HTTP transport -->
+    <PackageReference Include="Azure.AI.OpenAI" Version="2.1.0" />
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+
     <!-- MAF core + OpenAI provider, all stable -->
     <PackageReference Include="Microsoft.Agents.AI" Version="1.1.0" />
     <PackageReference Include="Microsoft.Agents.AI.Abstractions" Version="1.1.0" />

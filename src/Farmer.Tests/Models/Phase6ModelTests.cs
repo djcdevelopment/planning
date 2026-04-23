@@ -131,34 +131,35 @@ public class Phase6ModelTests
     }
 
     [Fact]
-    public void OpenAISettings_ResolveApiKey_PrefersExplicitValue()
+    public void OpenAISettings_EndpointDefaultsToEmpty()
     {
-        var settings = new OpenAISettings { ApiKey = "sk-explicit" };
-        Assert.Equal("sk-explicit", settings.ResolveApiKey());
+        // Phase 7 swapped the retrospective agent from the public OpenAI
+        // endpoint + API key to Azure OpenAI + Entra via
+        // DefaultAzureCredential. The settings POCO no longer carries a
+        // secret — just an endpoint and a deployment name. The default is
+        // empty so a missing config triggers the skip path (AutoPass per
+        // ADR-007) instead of a confusing connection attempt.
+        var settings = new OpenAISettings();
+        Assert.Equal(string.Empty, settings.Endpoint);
     }
 
     [Fact]
-    public void OpenAISettings_ResolveApiKey_FallsBackToEnvironment()
-    {
-        const string envVar = "OPENAI_API_KEY";
-        var original = Environment.GetEnvironmentVariable(envVar);
-        try
-        {
-            Environment.SetEnvironmentVariable(envVar, "sk-from-env");
-            var settings = new OpenAISettings { ApiKey = "" };
-            Assert.Equal("sk-from-env", settings.ResolveApiKey());
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(envVar, original);
-        }
-    }
-
-    [Fact]
-    public void OpenAISettings_HasGpt4oMiniAsDefaultQaModel()
+    public void OpenAISettings_DeploymentNameDefaultsToEmpty()
     {
         var settings = new OpenAISettings();
-        Assert.Equal("gpt-4o-mini", settings.QaModel);
+        Assert.Equal(string.Empty, settings.DeploymentName);
+    }
+
+    [Fact]
+    public void OpenAISettings_CanBindEndpointAndDeployment()
+    {
+        var settings = new OpenAISettings
+        {
+            Endpoint = "https://farmer-openai-dev.openai.azure.com/",
+            DeploymentName = "gpt-4.1-mini",
+        };
+        Assert.Equal("https://farmer-openai-dev.openai.azure.com/", settings.Endpoint);
+        Assert.Equal("gpt-4.1-mini", settings.DeploymentName);
     }
 
     [Fact]
