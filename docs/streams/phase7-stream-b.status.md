@@ -96,4 +96,4 @@ Worktree: `C:\work\iso\planning-stream-b`
   `DeploymentNameDefaultsToEmpty`, `CanBindEndpointAndDeployment`).
 - Runtime smoke: not executed.
 
-- `[COMPLETE]` <pending commit sha, filled in by commit step>.
+- `[COMPLETE]` 9c226e3.
