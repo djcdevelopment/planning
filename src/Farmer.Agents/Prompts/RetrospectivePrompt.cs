@@ -49,6 +49,21 @@ public static class RetrospectivePrompt
            The qa_retro markdown is at most a few short paragraphs. You are
            informing a human reader who has ten other runs to look at.
 
+        6. Prefer source evidence over the worker's self-report. When the
+           user message contains a "Source files produced" section, that
+           is the ground truth about what the worker actually wrote. The
+           manifest, summary, and worker-retro are the worker's claims —
+           useful context, but treat them as claims to verify, not facts.
+           If the source contradicts the worker's self-report (e.g., the
+           worker claims a feature is complete but the source shows a
+           stub, TODO, or missing logic), flag that contradiction
+           explicitly in findings. That discrimination is the whole
+           reason source is in front of you.
+
+           If the "Source files produced" section reports that no source
+           was captured, say so in your retro and note that your
+           reasoning is limited to the manifest + summary.
+
         Scoring rubric — risk_score is 0-100:
         - 0-20: worker produced expected output, no red flags
         - 21-40: minor notes, a few small improvements possible
@@ -78,7 +93,24 @@ public static class RetrospectivePrompt
     /// compatibility with <see cref="M:Microsoft.Extensions.AI.IChatClient"/>'s
     /// ChatMessage content model.
     /// </summary>
-    public static string BuildUserMessage(RetrospectiveContext context)
+    /// <param name="context">Run context — manifest, summary, worker retro, log tail.</param>
+    /// <param name="sourceFiles">
+    /// Source files produced by the worker, loaded by the agent from the
+    /// run's <c>artifacts/</c> directory (Phase 7.5 Stream G populates it).
+    /// Pass null or empty to render a "None captured for this run" block —
+    /// the agent's system instructions know to degrade gracefully when
+    /// source isn't available.
+    /// </param>
+    /// <param name="totalSourceFiles">
+    /// Total number of source files available on disk before the
+    /// <c>MaxChangedFiles</c> cap was applied. When null, the prompt
+    /// reports <paramref name="sourceFiles"/>.Count as the total. Used
+    /// to signal "showing M of N" when we're sampling.
+    /// </param>
+    public static string BuildUserMessage(
+        RetrospectiveContext context,
+        IReadOnlyList<ArtifactSnippet>? sourceFiles = null,
+        int? totalSourceFiles = null)
     {
         var sb = new StringBuilder();
 
@@ -141,13 +173,37 @@ public static class RetrospectivePrompt
             sb.AppendLine();
         }
 
-        if (context.SampledOutputs.Count > 0)
+        // Source files produced — the ground-truth section the agent is
+        // instructed to prefer over the worker's self-report. Populated
+        // from the archived artifacts/ dir (Stream G) at the agent level.
+        // Fall back to the legacy SampledOutputs field if the caller
+        // hasn't pre-loaded via the new `sourceFiles` parameter — keeps
+        // back-compat with any future in-process caller that populates
+        // the context directly.
+        var files = sourceFiles ?? context.SampledOutputs;
+
+        sb.AppendLine("## Source files produced");
+        sb.AppendLine();
+        if (files.Count == 0)
         {
-            sb.AppendLine("=== SAMPLED OUTPUT FILES ===");
-            foreach (var snippet in context.SampledOutputs)
+            sb.AppendLine("None captured for this run — the retrospective is reasoning from the manifest + summary only.");
+            sb.AppendLine();
+        }
+        else
+        {
+            var total = totalSourceFiles ?? files.Count;
+            sb.AppendLine($"<file count>{total} files (showing {files.Count} of {total}; up to <MaxFileBytes> bytes each)</file count>");
+            sb.AppendLine();
+            foreach (var snippet in files)
             {
-                sb.AppendLine($"--- {snippet.Path} ({snippet.TotalBytes} bytes{(snippet.Truncated ? ", truncated" : "")}) ---");
+                var lang = InferLanguageHint(snippet.Path);
+                sb.AppendLine($"### {snippet.Path}" +
+                    (snippet.Truncated ? $" (truncated at {snippet.Content.Length} of {snippet.TotalBytes} bytes)" : ""));
+                sb.Append("```");
+                if (!string.IsNullOrEmpty(lang)) sb.Append(lang);
+                sb.AppendLine();
                 sb.AppendLine(snippet.Content);
+                sb.AppendLine("```");
                 sb.AppendLine();
             }
         }
@@ -157,6 +213,49 @@ public static class RetrospectivePrompt
         sb.AppendLine("Return only the JSON object specified above.");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Lightweight language hint from a file extension — helps the model
+    /// treat the block as code (and prevents ``` inside the content from
+    /// confusing it). Unknown extensions return empty so the fence stays
+    /// bare.
+    /// </summary>
+    private static string InferLanguageHint(string relativePath)
+    {
+        if (string.IsNullOrEmpty(relativePath)) return string.Empty;
+        var ext = Path.GetExtension(relativePath).TrimStart('.').ToLowerInvariant();
+        return ext switch
+        {
+            "cs" => "csharp",
+            "py" => "python",
+            "js" or "mjs" or "cjs" => "javascript",
+            "ts" => "typescript",
+            "tsx" => "tsx",
+            "jsx" => "jsx",
+            "json" => "json",
+            "xml" => "xml",
+            "html" or "htm" => "html",
+            "css" => "css",
+            "md" or "markdown" => "markdown",
+            "yml" or "yaml" => "yaml",
+            "toml" => "toml",
+            "sh" or "bash" => "bash",
+            "ps1" or "psm1" or "psd1" => "powershell",
+            "sql" => "sql",
+            "go" => "go",
+            "rs" => "rust",
+            "java" => "java",
+            "kt" or "kts" => "kotlin",
+            "swift" => "swift",
+            "rb" => "ruby",
+            "php" => "php",
+            "c" or "h" => "c",
+            "cpp" or "cc" or "cxx" or "hpp" => "cpp",
+            "dockerfile" => "dockerfile",
+            "txt" or "log" => "",
+            _ => "",
+        };
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new()

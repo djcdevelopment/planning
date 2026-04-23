@@ -116,6 +116,15 @@ public sealed class RetrospectiveStage : IWorkflowStage
         var execLog = await SafeReadTailAsync(vm.Name, "output/execution-log.txt",
             _retroSettings.ExecutionLogTailLines, ct);
 
+        // Phase 7.5 Stream E: point the agent at the host-side artifacts/
+        // directory so it can reason from actual source, not just the
+        // worker's self-reported manifest + summary. Stream G's ArchiveStage
+        // populates this directory between Collect and Retrospective; null
+        // when state has no run directory (in-memory test paths).
+        var artifactsDir = state.RunDirectory is null
+            ? null
+            : Path.Combine(state.RunDirectory, "artifacts");
+
         return new RetrospectiveContext
         {
             RunId = state.RunId,
@@ -127,6 +136,7 @@ public sealed class RetrospectiveStage : IWorkflowStage
             WorkerRetroMarkdown = workerRetro,
             ExecutionLogTail = execLog,
             SampledOutputs = Array.Empty<ArtifactSnippet>(),
+            ArtifactsDirectory = artifactsDir,
         };
     }
 
