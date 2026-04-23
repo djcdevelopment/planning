@@ -20,19 +20,32 @@
 
 $ErrorActionPreference = 'Stop'
 
-# 1) Pre-flight: cloudflared on PATH?
+# 1) Pre-flight: cloudflared on PATH, or in the standard winget install dir?
 $cloudflaredCmd = Get-Command cloudflared -ErrorAction SilentlyContinue
 if (-not $cloudflaredCmd) {
-    Write-Host ""
-    Write-Host "ERROR: cloudflared not found on PATH." -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Install with winget:"
-    Write-Host "  winget install Cloudflare.cloudflared"
-    Write-Host ""
-    Write-Host "Or download the Windows .exe from:"
-    Write-Host "  https://github.com/cloudflare/cloudflared/releases/latest"
-    Write-Host ""
-    exit 1
+    # Fresh winget install puts cloudflared at "%ProgramFiles% (x86)\cloudflared\"
+    # but PATH doesn't refresh until a new shell. Fall back to the install dir.
+    $fallback = Join-Path ${env:ProgramFiles(x86)} 'cloudflared\cloudflared.exe'
+    if (-not (Test-Path $fallback)) {
+        $fallback = Join-Path $env:ProgramFiles 'cloudflared\cloudflared.exe'
+    }
+    if (Test-Path $fallback) {
+        $cloudflaredPath = $fallback
+        Write-Host "Using cloudflared at $fallback (PATH not refreshed yet)" -ForegroundColor DarkGray
+    } else {
+        Write-Host ""
+        Write-Host "ERROR: cloudflared not found on PATH or in Program Files." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Install with winget:"
+        Write-Host "  winget install Cloudflare.cloudflared"
+        Write-Host ""
+        Write-Host "Or download the Windows .exe from:"
+        Write-Host "  https://github.com/cloudflare/cloudflared/releases/latest"
+        Write-Host ""
+        exit 1
+    }
+} else {
+    $cloudflaredPath = $cloudflaredCmd.Source
 }
 
 $root = Split-Path -Parent $PSScriptRoot
@@ -56,7 +69,7 @@ Write-Host ""
 $tunnelUrlRegex = [regex]'https://[a-z0-9-]+\.trycloudflare\.com'
 
 $pinfo = New-Object System.Diagnostics.ProcessStartInfo
-$pinfo.FileName = $cloudflaredCmd.Path
+$pinfo.FileName = $cloudflaredPath
 $pinfo.Arguments = 'tunnel --url http://localhost:5100'
 $pinfo.UseShellExecute = $false
 $pinfo.RedirectStandardOutput = $true
