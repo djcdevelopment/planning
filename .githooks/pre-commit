@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Local secret scanner. Runs infra/check-staged-secrets.ps1 against staged content.
+# Bypass (only when you're certain): git commit --no-verify
+set -e
+repo_root="$(git rev-parse --show-toplevel)"
+exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$repo_root/infra/check-staged-secrets.ps1"

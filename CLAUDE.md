@@ -6,9 +6,9 @@ If you're an AI session (Claude Code, another agent, future-me) picking up this 
 
 **Farmer** is a .NET 9 control plane that orchestrates Claude CLI workers on Hyper-V Ubuntu VMs, with a Microsoft Agent Framework (MAF) retrospective agent on the host that reviews every run. NATS JetStream + ObjectStore for coordination, Jaeger for traces, HTTP `/trigger` for ingress, OTel-instrumented throughout. Target audience: Azure/.NET developers learning agent orchestration. The competitive differentiator is using MAF "as much as possible" while keeping workers autonomous on VMs. See [README.md](./README.md) for the full pitch and architecture diagram.
 
-## Current phase state (as of 2026-04-15 session)
+## Current phase state (as of 2026-04-16 session)
 
-Everything below is merged to `main`.
+Everything below is merged to `main` unless noted.
 
 - **Phase 5** shipped: externalized runtime, OTel, real SSH end-to-end verified.
 - **Phase 6** shipped: real `worker.sh` + Claude CLI on VM, `RetrospectiveStage` + MAF OpenAI `gpt-4o-mini`.
@@ -16,7 +16,17 @@ Everything below is merged to `main`.
 - **Phase 7 retry driver (PR #8)**: opt-in retry via `RetryPolicy` on the `/trigger` body. Driver loops up to `max_attempts` on configured verdicts; each retry gets a synthetic `0-feedback.md` prompt with the prior attempt's `ReviewVerdict.Findings` + `Suggestions`. Chain linked via `parent_run_id`. See [ADR-011](./docs/adr/adr-011-retry-driver.md).
 - **VM release fix (PR #10)**: `RunWorkflow.ExecuteAsync` now releases the reserved VM in a `finally` block. Before this, `IVmManager.ReleaseAsync` was never called by anything; in-process retry chains failed at attempt 2's ReserveVm. See [docs/session-retro-2026-04-15.md](./docs/session-retro-2026-04-15.md).
 - **IWorkflowRunner seam + real-Retry demo (PR #12)**: `RetryDriver` now depends on an `IWorkflowRunner` interface so its loop is testable (2 integration tests with a `FakeWorkflowRunner`). Also restored cost-report persistence that PR #8 accidentally dropped. New `WORKER_MODE=fake-bad` produces adversarial canned output on the first attempt and clean output on the retry -- the loop fires on real `Retry`/`Reject` verdicts instead of a contrived `retry_on_verdicts: ["Accept"]`. See [docs/retry-demo-2026-04-16.md](./docs/retry-demo-2026-04-16.md).
+- **Per-prompt trace spans (PR #15)**: log-based reconstruction of per-prompt spans from the worker's SSH-run log; back-dated via `Activity.SetStartTime` / `SetEndTime` so Jaeger waterfalls show per-prompt granularity.
+- **DeliverStage cleans VM dirs (PR #16)**: workers get a fresh `plans/` + `output/` each run. Shipped alongside the OpenAI-key leak incident that motivated PR #17.
+- **Secret scanner + CI second-line (PR #17, open -- ready to merge)**: `infra/check-staged-secrets.ps1` as a local pre-commit hook (`.githooks/`) plus a `secrets-scan` GitHub Actions job. Patterns: OpenAI (legacy + project), Anthropic, GitHub, Slack, AWS, PEM. Allowlist: `.example` / `.template` / `.lock`, `infra/secret-scan-test-fixtures/`, per-line `secret-scan: ignore`. Self-test: `.\infra\check-staged-secrets.ps1 -Test` = 4 positives, 3 negatives. First-time setup: `.\scripts\install-githooks.ps1`.
 - **Tests**: 133 green (128 unit + 5 integration with NatsServerFixture).
+
+## Backlog (not started)
+
+- **Rotate the leaked OpenAI key** (from the PR #16 incident; 2 min, urgent -- user action). Repo was private during the leak so blast radius was bounded, but rotate regardless.
+- **Azure OpenAI swap for the retrospective agent** (~1 hr) -- move off public OpenAI for the host-side MAF agent.
+- **NATS-event-driven retry / `RetryCoordinator`** (~2 hr) -- current retry driver loops in-process; event-driven version decouples.
+- **`prototype-nats/` directory rename** -- needs a reboot to release file handles.
 
 ## The plan file for the active session
 
@@ -66,6 +76,12 @@ C:\work\iso\planning-runtime\
 
 ```powershell
 cd C:\work\iso\planning
+
+# First-time setup: pre-commit secret scanner (idempotent).
+# Points git at .githooks/ so infra/check-staged-secrets.ps1 runs on every commit.
+# Bypass with `git commit --no-verify` (rare). CI workflow .github/workflows/secrets-scan.yml
+# is the server-side second-line.
+.\scripts\install-githooks.ps1
 
 # Build + test
 dotnet build src\Farmer.sln                # expect clean, 0 warnings
