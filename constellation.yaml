@@ -1,0 +1,174 @@
+# Planning Spine Constellation Manifest
+#
+# Multi-stage cognitive planning, prompt verification, context synthesis,
+# Hyper-V VM orchestration, and retrospective agent evaluation pipeline.
+
+schema_version: 1
+
+archetype: engineering-only
+topology: centered
+conformance: canonical
+
+intent: "Multi-stage cognitive planning, prompt verification, and VM-based agent orchestration"
+
+constellation:
+  name: planning-spine
+  description: "Agent planning spine, task decomposition, context synthesis, and VM orchestration"
+  root_path: E:\work\planning
+  pm_workspace: docs/
+
+identity:
+  github_org: djcdevelopment
+
+telemetry:
+  otel_collector_endpoint: "http://localhost:4317"
+  otel_protocol: grpc
+  service_name_prefix: planning-spine
+
+repos:
+  - name: planning
+    kind: git
+    role: "Farmer .NET 9 VM-based agent orchestration control plane, NATS JetStream, and MAF retrospective agent"
+    producer_type: runtime_execution
+    github: djcdevelopment/planning
+    visibility: private
+    local_path: E:\work\planning
+    primary: true
+    lifecycle: active
+
+  - name: farmer
+    kind: git
+    role: "Core Farmer engine, infrastructure setup, and Hyper-V worker runtime"
+    producer_type: engine
+    github: djcdevelopment/farmer
+    visibility: private
+    local_path: E:\work\start\farmer
+    primary: false
+    depends_on:
+      - planning
+    lifecycle: active
+
+  - name: planner
+    kind: git
+    role: "Task decomposition, prompt synthesis, backlog expansion, and plan visualization server"
+    producer_type: engine
+    github: djcdevelopment/start-planner
+    visibility: private
+    local_path: E:\work\start\planner
+    primary: false
+    lifecycle: active
+    surfaces:
+      - name: planner-server
+        kind: web-app
+        lifecycle: active
+      - name: plan-viewer
+        kind: web-app
+        lifecycle: active
+
+  - name: contextforge
+    kind: git
+    role: "Context synthesis, association engine, token budgeting, and contract validation"
+    producer_type: substrate
+    github: djcdevelopment/ContextForge
+    visibility: private
+    local_path: E:\work\start\contextforge
+    primary: false
+    lifecycle: active
+
+  - name: ashley
+    kind: git
+    role: "Task decomposition agent and UI execution harness (.NET 9 + Docker)"
+    producer_type: runtime_execution
+    github: djcdevelopment/ashley
+    visibility: private
+    local_path: E:\work\start\ashley
+    primary: false
+    depends_on:
+      - contextforge
+    lifecycle: active
+
+  - name: portmap
+    kind: git
+    role: "Fleet port registry, allocator, conflict detection scanner, and validation service"
+    producer_type: dev_tooling
+    github: djcdevelopment/portmap
+    visibility: private
+    local_path: E:\work\start\portmap
+    primary: false
+    lifecycle: active
+    surfaces:
+      - name: port-registry
+        kind: web-app
+        lifecycle: active
+
+  - name: precheck
+    kind: git
+    role: "Deterministic preflight verification API and runs inspector (:18100)"
+    producer_type: operational_viewer
+    github: djcdevelopment/precheck
+    visibility: private
+    local_path: E:\work\start\precheck
+    primary: false
+    lifecycle: active
+    surfaces:
+      - name: precheck-ui
+        kind: web-app
+        lifecycle: active
+
+  - name: precheckv2
+    kind: git
+    role: "Second-generation preflight verification and bundle validation engine"
+    producer_type: dev_tooling
+    github: djcdevelopment/precheckv2
+    visibility: private
+    local_path: E:\work\start\precheckv2
+    primary: false
+    depends_on:
+      - precheck
+    lifecycle: active
+
+  - name: scarecrow
+    kind: git
+    role: "Agent guardrails, safety verification harness, and Electron desktop workbench"
+    producer_type: operational_viewer
+    github: djcdevelopment/scarecrow
+    visibility: private
+    local_path: E:\work\start\scarecrow
+    primary: false
+    lifecycle: active
+
+  - name: langfuse
+    kind: git
+    role: "Local Langfuse tracing, LLM prompt engineering observability, and evaluation"
+    producer_type: telemetry_ingest
+    github: langfuse/langfuse
+    visibility: public
+    local_path: E:\work\start\langfuse
+    primary: false
+    lifecycle: active
+
+contracts:
+  - name: farmer-run-events
+    producer_repo: planning
+    consumer_repos:
+      - precheck
+    contract_doc: docs/adr/adr-010-nats-messaging-cutover.md
+    stability: stable
+    scope: cross-repo
+
+  - name: portmap-port-claims
+    producer_repo: portmap
+    consumer_repos:
+      - planning
+      - farmer
+    contract_doc: README.md
+    stability: stable
+    scope: cross-repo
+
+  - name: contextforge-token-contracts
+    producer_repo: contextforge
+    consumer_repos:
+      - ashley
+    contract_doc: BUILD_PLAN.md
+    stability: stable
+    scope: cross-repo
